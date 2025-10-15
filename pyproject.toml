@@ -1,16 +1,42 @@
-[project]
+[tool.poetry]
 name = "zenzefi-backend"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "melxiory",email = "sibagatullinnail@gmail.com"}
-]
+description = "Zenzefi Backend - Authentication and Proxy Server"
+authors = ["melxiory <sibagatullinnail@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = [
-]
+packages = [{include = "app"}]
 
+[tool.poetry.dependencies]
+python = "^3.13"
+fastapi = "^0.119.0"
+uvicorn = "^0.37.0"
+sqlalchemy = "^2.0.44"
+alembic = "^1.17.0"
+pydantic = {extras = ["email"], version = "^2.12.2"}
+pydantic-settings = "^2.11.0"
+psycopg2-binary = "^2.9.11"
+python-jose = "^3.5.0"
+passlib = "^1.7.4"
+bcrypt = "^4.0.0"
+python-multipart = "^0.0.20"
+redis = "^6.4.0"
+httpx = "^0.28.1"
+loguru = "^0.7.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.4.2"
+pytest-cov = "^7.0.0"
+black = "^25.9.0"
+isort = "^7.0.0"
+flake8 = "^7.3.0"
+mypy = "^1.18.2"
+fakeredis = "^2.32.0"
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "aliyun"
+url = "https://mirrors.aliyun.com/pypi/simple/"
+priority = "primary"
