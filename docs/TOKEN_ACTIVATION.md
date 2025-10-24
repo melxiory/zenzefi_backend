@@ -20,13 +20,11 @@ Tokens use **lazy activation**: they don't start expiring until first actual use
 ### ❌ Does NOT activate token:
 - `POST /api/v1/tokens/purchase` - Creates token
 - `GET /api/v1/tokens/my-tokens` - Lists user's tokens
-- `POST /api/v1/tokens/validate` - Validates token **AND activates it!** ⚠️
-- `GET /api/v1/proxy/status` - **Read-only status check (NEW!)**
+- `GET /api/v1/proxy/status` - **Read-only status check**
 
 ### ✅ DOES activate token (on first use):
 - `GET/POST/etc /api/v1/proxy/{path}` - Any proxy request
 - `WS /api/v1/proxy/{path}` - WebSocket connections
-- `POST /api/v1/tokens/validate` - Token validation endpoint
 
 ## API Examples
 

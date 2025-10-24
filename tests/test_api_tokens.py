@@ -183,88 +183,13 @@ class TestGetMyTokensEndpoint:
         assert response.status_code == 403
 
 
-class TestValidateTokenEndpoint:
-    """Tests for POST /api/v1/tokens/validate endpoint"""
-
-    def test_validate_token_success(self, authenticated_client: TestClient):
-        """Test successful token validation"""
-        # Purchase token
-        purchase_response = authenticated_client.post(
-            "/api/v1/tokens/purchase", json={"duration_hours": 24}
-        )
-        access_token = purchase_response.json()["token"]
-
-        # Validate token (no auth required for validation)
-        client = authenticated_client
-        client.headers = {}  # Remove JWT auth header
-        validate_data = {"token": access_token}
-        response = client.post("/api/v1/tokens/validate", json=validate_data)
-
-        # Check response
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["valid"] is True
-        assert "user_id" in data
-        assert "token_id" in data
-        assert "expires_at" in data
-        assert "time_remaining_seconds" in data
-        assert data["time_remaining_seconds"] > 0
-
-    def test_validate_invalid_token(self, client: TestClient):
-        """Test validating an invalid token"""
-        validate_data = {"token": "invalid-token-that-does-not-exist"}
-        response = client.post("/api/v1/tokens/validate", json=validate_data)
-
-        # Should return valid=false
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["valid"] is False
-        assert "reason" in data
-
-    def test_validate_empty_token(self, client: TestClient):
-        """Test validating an empty token"""
-        validate_data = {"token": ""}
-        response = client.post("/api/v1/tokens/validate", json=validate_data)
-
-        # Should return 422 (Pydantic validation error for min_length=1)
-        assert response.status_code == 422
-
-    def test_validate_token_activates_on_first_use(
-        self, authenticated_client: TestClient
-    ):
-        """Test that token is activated when validated for first time"""
-        # Purchase token
-        purchase_response = authenticated_client.post(
-            "/api/v1/tokens/purchase", json={"duration_hours": 24}
-        )
-        access_token = purchase_response.json()["token"]
-        token_id = purchase_response.json()["id"]
-
-        # Validate token first time
-        client = authenticated_client
-        client.headers = {}
-        validate_data = {"token": access_token}
-        response1 = client.post("/api/v1/tokens/validate", json=validate_data)
-
-        assert response1.status_code == 200
-        assert response1.json()["valid"] is True
-
-        # Validate again - should still work
-        response2 = client.post("/api/v1/tokens/validate", json=validate_data)
-
-        assert response2.status_code == 200
-        assert response2.json()["valid"] is True
-
-
 class TestTokensEndpointsIntegration:
     """Integration tests for tokens endpoints"""
 
     def test_full_token_lifecycle(
         self, client: TestClient, test_user_data: dict, test_user_data_2: dict
     ):
-        """Test complete token lifecycle: register -> login -> purchase -> validate"""
+        """Test complete token lifecycle: register -> login -> purchase -> check status"""
         # Step 1: Register user
         register_response = client.post("/api/v1/auth/register", json=test_user_data)
         assert register_response.status_code == 201
@@ -286,12 +211,12 @@ class TestTokensEndpointsIntegration:
         assert purchase_response.status_code == 201
         access_token = purchase_response.json()["token"]
 
-        # Step 4: Validate access token (no auth needed)
-        validate_response = client.post(
-            "/api/v1/tokens/validate", json={"token": access_token}
+        # Step 4: Check token status (read-only, doesn't activate)
+        status_response = client.get(
+            "/api/v1/proxy/status", headers={"X-Access-Token": access_token}
         )
-        assert validate_response.status_code == 200
-        assert validate_response.json()["valid"] is True
+        assert status_response.status_code == 200
+        assert status_response.json()["is_activated"] is False
 
         # Step 5: Get my tokens
         my_tokens_response = client.get("/api/v1/tokens/my-tokens", headers=headers)

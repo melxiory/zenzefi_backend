@@ -9,8 +9,6 @@ from app.models.user import User
 from app.schemas.token import (
     TokenCreate,
     TokenResponse,
-    TokenValidate,
-    TokenValidationResponse,
 )
 from app.services.token_service import TokenService
 
@@ -68,32 +66,3 @@ def get_my_tokens(
     """
     tokens = TokenService.get_user_tokens(str(current_user.id), active_only, db)
     return tokens
-
-
-@router.post("/validate", response_model=TokenValidationResponse)
-def validate_token(token_data: TokenValidate, db: Session = Depends(get_db)):
-    """
-    Validate an access token
-
-    Args:
-        token_data: Token to validate
-        db: Database session
-
-    Returns:
-        Token validation result
-    """
-    valid, data = TokenService.validate_token(token_data.token, db)
-
-    if valid and data:
-        expires_at = datetime.fromisoformat(data["expires_at"])
-        time_remaining = int((expires_at - datetime.utcnow()).total_seconds())
-
-        return TokenValidationResponse(
-            valid=True,
-            user_id=data["user_id"],
-            token_id=data["token_id"],
-            expires_at=expires_at,
-            time_remaining_seconds=max(0, time_remaining),
-        )
-    else:
-        return TokenValidationResponse(valid=False, reason="Token expired or invalid")
