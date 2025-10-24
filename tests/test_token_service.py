@@ -200,8 +200,9 @@ class TestTokenServiceValidate:
         )
 
         # Manually activate and expire the token in database
+        # expires_at is now calculated, so we set activated_at far enough in the past
+        # For 1-hour token: activated 2 hours ago = expired 1 hour ago
         token.activated_at = datetime.utcnow() - timedelta(hours=2)
-        token.expires_at = datetime.utcnow() - timedelta(hours=1)
         test_db.commit()
 
         # Clear Redis cache so validation will check database
