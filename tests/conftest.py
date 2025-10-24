@@ -14,11 +14,12 @@ from app.main import app
 from app.config import Settings
 
 
-# Test database setup - use PostgreSQL test database
+# Test database setup - use SEPARATE PostgreSQL test database
+# IMPORTANT: Tests use zenzefi_test (NOT zenzefi_dev!) to avoid dropping production tables
 # This requires docker-compose.dev.yml to be running with postgres service
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql+psycopg2://zenzefi:devpassword@localhost:5432/zenzefi_dev"
+    "postgresql+psycopg2://zenzefi:devpassword@localhost:5432/zenzefi_test"
 )
 
 
