@@ -73,9 +73,73 @@ class TokenService:
         return db_token
 
     @staticmethod
+    def check_token_status(token: str, db: Session) -> Tuple[bool, Optional[dict]]:
+        """
+        Check token status WITHOUT activating it (read-only check)
+
+        This is useful for status endpoints where you want to check if a token
+        is valid without starting the expiration countdown.
+
+        Args:
+            token: Access token string
+            db: Database session
+
+        Returns:
+            Tuple of (is_valid, token_data)
+            token_data contains: user_id, token_id, expires_at, duration_hours, is_activated
+
+            For non-activated tokens:
+                - expires_at will be None
+                - is_activated will be False
+        """
+        # Check Redis cache first (fast path)
+        redis_data = TokenService._get_cached_token(token)
+        if redis_data:
+            expires_at = datetime.fromisoformat(redis_data["expires_at"])
+            if expires_at > datetime.utcnow():
+                redis_data["is_activated"] = True
+                return True, redis_data
+            else:
+                # Expired token in cache
+                return False, None
+
+        # Check database (slow path) - READ ONLY, no activation
+        db_token = (
+            db.query(AccessToken)
+            .filter(
+                AccessToken.token == token,
+                AccessToken.is_active == True,
+                AccessToken.revoked_at == None,
+            )
+            .first()
+        )
+
+        if db_token:
+            # Check if already activated and expired
+            if db_token.expires_at and db_token.expires_at <= datetime.utcnow():
+                return False, None
+
+            # Return token data WITHOUT activation
+            token_data = {
+                "user_id": str(db_token.user_id),
+                "token_id": str(db_token.id),
+                "expires_at": db_token.expires_at.isoformat() if db_token.expires_at else None,
+                "duration_hours": db_token.duration_hours,
+                "is_activated": db_token.activated_at is not None,
+                "activated_at": db_token.activated_at.isoformat() if db_token.activated_at else None,
+            }
+
+            return True, token_data
+
+        return False, None
+
+    @staticmethod
     def validate_token(token: str, db: Session) -> Tuple[bool, Optional[dict]]:
         """
-        Validate access token
+        Validate access token and ACTIVATE it on first use
+
+        ⚠️  WARNING: This method activates the token on first validation!
+        Use check_token_status() if you need read-only validation.
 
         Args:
             token: Access token string

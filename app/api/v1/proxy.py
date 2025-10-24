@@ -16,7 +16,10 @@ async def proxy_status(
     db: Session = Depends(get_db),
 ):
     """
-    Check proxy connection status and token validity
+    Check proxy connection status and token validity (read-only, does NOT activate token)
+
+    This endpoint checks if a token is valid WITHOUT activating it. This allows
+    clients to check token status before deciding to connect through the proxy.
 
     Args:
         x_access_token: Access token from header
@@ -24,12 +27,14 @@ async def proxy_status(
 
     Returns:
         Connection status and token information
+        - For non-activated tokens: expires_at is null, is_activated is false
+        - For activated tokens: expires_at is set, time_remaining_seconds calculated
 
     Raises:
         HTTPException: If token is invalid or expired
     """
-    # Validate token
-    valid, token_data = TokenService.validate_token(x_access_token, db)
+    # Check token status WITHOUT activating it
+    valid, token_data = TokenService.check_token_status(x_access_token, db)
 
     if not valid:
         raise HTTPException(
@@ -37,17 +42,28 @@ async def proxy_status(
             detail="Invalid or expired access token",
         )
 
-    expires_at = datetime.fromisoformat(token_data["expires_at"])
-    time_remaining = int((expires_at - datetime.utcnow()).total_seconds())
-
-    return {
+    # Build response based on whether token is activated
+    response = {
         "connected": True,
         "user_id": token_data["user_id"],
         "token_id": token_data["token_id"],
-        "time_remaining_seconds": max(0, time_remaining),
+        "is_activated": token_data["is_activated"],
         "expires_at": token_data["expires_at"],
-        "status": "active",
+        "duration_hours": token_data["duration_hours"],
     }
+
+    # Calculate time remaining only for activated tokens
+    if token_data["is_activated"] and token_data["expires_at"]:
+        expires_at = datetime.fromisoformat(token_data["expires_at"])
+        time_remaining = int((expires_at - datetime.utcnow()).total_seconds())
+        response["time_remaining_seconds"] = max(0, time_remaining)
+        response["status"] = "active"
+    else:
+        # Token not yet activated
+        response["time_remaining_seconds"] = None
+        response["status"] = "ready"  # Ready to be activated
+
+    return response
 
 
 @router.websocket("/{path:path}")
