@@ -56,6 +56,13 @@ class Settings(BaseSettings):
 
     # Zenzefi Target
     ZENZEFI_TARGET_URL: str = "https://zenzefi-win11-server"
+    ZENZEFI_BASIC_AUTH_USER: Optional[str] = None  # Optional: user for HTTP Basic Auth
+    ZENZEFI_BASIC_AUTH_PASSWORD: Optional[str] = None  # Optional: password for HTTP Basic Auth
+
+    # Backend URL (для ContentRewriter)
+    # Это URL где доступен ваш backend для клиентов
+    # Например: https://api.zenzefi.com или http://localhost:8000
+    BACKEND_URL: str = "http://localhost:8000"  # Измените на реальный URL в production
 
     # Token Pricing (ZNC credits) - для MVP будут бесплатными
     TOKEN_PRICE_1H: float = 0.0      # Бесплатно для MVP

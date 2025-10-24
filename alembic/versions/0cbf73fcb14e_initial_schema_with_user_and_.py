@@ -1,8 +1,8 @@
-"""Initial migration: User and AccessToken models
+"""Initial schema with User and AccessToken models
 
-Revision ID: 5ee1e942f1ec
+Revision ID: 0cbf73fcb14e
 Revises: 
-Create Date: 2025-10-15 12:13:04.766209
+Create Date: 2025-10-22 00:21:40.130928
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '5ee1e942f1ec'
+revision: str = '0cbf73fcb14e'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

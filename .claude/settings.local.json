@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/working/My_projects/zenzefi_client/core/**)",
+      "Bash(poetry run python:*)",
+      "Bash(timeout 10 poetry run python:*)",
+      "Bash(echo:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
