@@ -110,7 +110,11 @@ poetry run mypy app/
 app/
 ├── api/v1/           # HTTP endpoints (auth, tokens, users, proxy)
 ├── services/         # Business logic layer
-├── models/           # SQLAlchemy ORM models
+│   ├── auth_service.py       # User registration, authentication
+│   ├── token_service.py      # Token generation, validation, caching
+│   ├── proxy_service.py      # HTTP/WebSocket proxying
+│   └── content_rewriter.py   # URL rewriting for proxied content
+├── models/           # SQLAlchemy ORM models (User, AccessToken)
 ├── schemas/          # Pydantic validation schemas
 ├── core/             # Core utilities (security, database, redis, logging)
 └── main.py           # FastAPI application entry point
@@ -119,29 +123,48 @@ app/
 ### Key Services
 
 **TokenService** (`app/services/token_service.py`):
-- Generates URL-safe random access tokens (48 bytes)
+- Generates URL-safe random access tokens (48 bytes = 64 chars)
+- Two validation methods:
+  - `validate_token()` - validates AND activates token on first use
+  - `check_token_status()` - read-only check without activation
 - Validates tokens with Redis cache (fast path) + PostgreSQL (slow path)
 - Activates token on first use (sets `activated_at`)
-- Caches token metadata in Redis (TTL = expires_at)
+- Caches only activated tokens in Redis (TTL = expires_at)
+- Filters: `is_active=True`, `revoked_at=None`, not expired
 
 **AuthService** (`app/services/auth_service.py`):
 - User registration with bcrypt password hashing
 - Login with JWT token generation
-- JWT payload: `{"sub": user_id, "username": username, "email": email}`
+- JWT payload: `{"sub": user_id, "username": username}` (NOT email)
+- JWT expires in 60 minutes (configurable via ACCESS_TOKEN_EXPIRE_MINUTES)
 
 **ProxyService** (`app/services/proxy_service.py`):
-- HTTP proxying to Zenzefi server using httpx
-- Validates X-Access-Token header for each request
+- HTTP and WebSocket proxying to Zenzefi server
+- HTTP: Uses httpx with SSL verification disabled (internal VPN)
+- WebSocket: Uses websockets library for bidirectional communication
+- Validates X-Access-Token for each request (HTTP header or WS query param)
 - Forwards requests with custom headers (X-User-Id, X-Token-Id)
+- Content rewriting: Injects JavaScript to intercept fetch/XHR/WebSocket
+- Supports HTTP Basic Auth for upstream server (optional)
+
+**ContentRewriter** (`app/services/content_rewriter.py`):
+- URL rewriting in proxied content (HTML, CSS, JS, JSON)
+- Rewrites relative URLs to use proxy prefix (/api/v1/proxy)
+- Handles Location headers and other URL-based response headers
+- Singleton pattern with lazy initialization in ProxyService
 
 ### Database Models
 
 **User** (`app/models/user.py`):
-- Fields: id (UUID), email, username, hashed_password, full_name, is_active
-- Relationships: tokens (one-to-many with AccessToken)
+- Fields: id (UUID), email, username, hashed_password, full_name, is_active, is_superuser, created_at, updated_at
+- Indexed: email, username (unique indexes)
+- Relationships: tokens (one-to-many with AccessToken, cascade delete)
 
 **AccessToken** (`app/models/token.py`):
-- Fields: id (UUID), user_id (FK), token (random string), duration_hours, expires_at, activated_at, is_active, revoked_at
+- Fields: id (UUID), user_id (FK), token (random string), duration_hours, activated_at, is_active, revoked_at, created_at
+- `expires_at` - calculated property (activated_at + duration_hours), not stored in DB
+- `revoked_at` - timestamp of manual token revocation (NULL = not revoked)
+- Validation checks: `is_active=True`, `revoked_at=None`, and token not expired
 - Valid durations: 1, 12, 24, 168 (week), 720 (month) hours
 - Token format: 64-char URL-safe string (`secrets.token_urlsafe(48)`)
 
@@ -176,10 +199,11 @@ TTL: Until token expiration
 ### Test Setup (`tests/conftest.py`)
 
 Tests use **real services** (not mocks):
-- PostgreSQL: Connects to `zenzefi_dev` database (localhost:5432)
-- Redis: Connects to real Redis (localhost:6379)
+- PostgreSQL: Connects to `zenzefi_test` database (NOT zenzefi_dev!) (localhost:5432)
+- Redis: Connects to real Redis (localhost:6379, db=0)
 - Database: Fresh tables created/dropped for each test (function scope)
 - Redis: Flushed before/after each test
+- All tests are isolated and can run in parallel
 
 ### Key Fixtures
 
@@ -225,13 +249,18 @@ def test_something(authenticated_client: TestClient):
 ### Environment Variables (.env)
 
 Required variables:
-- `SECRET_KEY` - JWT signing key (min 32 chars, change in production)
-- `POSTGRES_*` - Database connection (server, user, password, db)
-- `REDIS_*` - Redis connection (host, port, password optional)
+- `SECRET_KEY` - JWT signing key (HS256 algorithm)
+- `POSTGRES_SERVER`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` - Database connection
+- `REDIS_HOST`, `REDIS_PORT` - Redis connection (default: redis:6379)
 - `ZENZEFI_TARGET_URL` - Target Zenzefi server URL for proxying
+- `BACKEND_URL` - Backend URL for content rewriter (e.g., http://localhost:8000)
 
 Optional:
-- `DEBUG` - Debug mode (True/False)
+- `DEBUG` - Debug mode (default: False)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - JWT expiration (default: 60)
+- `REDIS_PASSWORD` - Redis password (default: None)
+- `REDIS_DB` - Redis database number (default: 0)
+- `ZENZEFI_BASIC_AUTH_USER`, `ZENZEFI_BASIC_AUTH_PASSWORD` - HTTP Basic Auth for upstream
 - `TOKEN_PRICE_*` - Token pricing (currently 0.0 for MVP)
 
 ### Database Connection
@@ -253,13 +282,18 @@ Connection pooling configured in `app/core/database.py`.
 - `GET /me` - Get current user profile (JWT auth required)
 
 ### Tokens (`/api/v1/tokens`)
-- `POST /purchase` - Create access token (JWT auth, MVP: free)
-- `GET /my-tokens?active_only=true` - List user's tokens (JWT auth)
-- `POST /validate` - Validate access token (no auth required)
+- `POST /purchase` - Create access token (JWT auth required, MVP: free)
+  - Body: `{"duration_hours": 1|12|24|168|720}`
+  - Returns: TokenResponse with token string
+- `GET /my-tokens?active_only=true` - List user's tokens (JWT auth required)
+  - Query param: `active_only` (default: true)
+  - Returns: List of TokenResponse
 
 ### Proxy (`/api/v1/proxy`)
-- `ALL /{path:path}` - Proxy to Zenzefi (X-Access-Token required)
-- `GET /status` - Check connection status (X-Access-Token required)
+- `ALL /{path:path}` - Proxy HTTP request to Zenzefi (X-Access-Token required)
+- `WS /{path:path}` - Proxy WebSocket connection (token via query param)
+  - WebSocket URL format: `/api/v1/proxy/path?token=<access_token>`
+  - Token validated before establishing connection
 
 ### Schema Field Mapping
 
@@ -276,10 +310,23 @@ This prevents serialization errors when returning AccessToken models from endpoi
 ### Token Validation Flow
 
 1. Check Redis cache (fast path, ~1ms)
-2. If cache miss, query PostgreSQL (slow path, ~10ms)
+2. If cache miss, query PostgreSQL (slow path, ~10ms) with filters:
+   - `is_active = True` (general active status)
+   - `revoked_at = None` (not manually revoked)
+   - Token not expired (activated_at + duration_hours > now)
 3. Activate token on first use (set `activated_at`)
 4. Update Redis cache with validated data
 5. Return validation result
+
+**Token Revocation:** To revoke a token manually, set `is_active=False` and `revoked_at=datetime.utcnow()`. This immediately invalidates the token and records the revocation timestamp for audit purposes.
+
+### Token Expiration Calculation
+
+**Important:** `expires_at` is a **computed property**, not a database column:
+- Removed from database schema (migration: "Remove expires_at column")
+- Calculated as: `activated_at + timedelta(hours=duration_hours)`
+- Returns `None` if token not yet activated
+- Eliminates data duplication and potential sync issues between stored expiration and activation time
 
 ### Timezone Handling
 
