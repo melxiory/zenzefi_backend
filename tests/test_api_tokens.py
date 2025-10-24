@@ -48,6 +48,8 @@ class TestTokenPurchaseEndpoint:
         assert data["duration_hours"] == 24
         assert data["is_active"] is True
         assert "expires_at" in data
+        assert data["expires_at"] is None  # Not activated yet
+        assert data["activated_at"] is None  # Not activated yet
         assert "created_at" in data
 
         # Token string should exist and have content

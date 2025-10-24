@@ -20,7 +20,7 @@ class AccessToken(Base):
     )  # Random string or JWT
     duration_hours = Column(Integer, nullable=False)  # 1, 12, 24, 168, 720
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=True)  # Set on first activation
     activated_at = Column(DateTime, nullable=True)  # When first used
     is_active = Column(Boolean, default=True, nullable=False)
     revoked_at = Column(DateTime, nullable=True)

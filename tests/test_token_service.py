@@ -53,11 +53,8 @@ class TestTokenServiceGenerate:
         assert isinstance(token.token, str)
         assert len(token.token) > 0
 
-        # Check expiration
-        assert token.expires_at is not None
-        expected_expiry = datetime.utcnow() + timedelta(hours=24)
-        # Allow 10 seconds tolerance
-        assert abs((token.expires_at - expected_expiry).total_seconds()) < 10
+        # Check expiration - should be NULL until activated
+        assert token.expires_at is None  # Not activated yet, so no expiry set
 
     def test_generate_token_valid_durations(
         self, test_db: Session, test_user_data: dict
@@ -151,7 +148,7 @@ class TestTokenServiceValidate:
     def test_validate_token_activates_on_first_use(
         self, test_db: Session, test_user_data: dict, fake_redis
     ):
-        """Test that token is activated on first validation"""
+        """Test that token is activated on first validation and expires_at is set"""
         # Create user and token
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
@@ -161,6 +158,7 @@ class TestTokenServiceValidate:
 
         # Token should not be activated yet
         assert token.activated_at is None
+        assert token.expires_at is None  # expires_at is NULL until first use
 
         # Clear Redis cache to force DB lookup
         fake_redis.flushall()
@@ -172,10 +170,15 @@ class TestTokenServiceValidate:
         # Check token was activated
         test_db.refresh(token)
         assert token.activated_at is not None
+        assert token.expires_at is not None  # Now expires_at is set
 
         # Activated time should be close to now
         now = datetime.utcnow()
         assert abs((now - token.activated_at).total_seconds()) < 10
+
+        # Expiry should be 24 hours from activation
+        expected_expiry = token.activated_at + timedelta(hours=24)
+        assert abs((token.expires_at - expected_expiry).total_seconds()) < 10
 
     def test_validate_invalid_token(self, test_db: Session):
         """Test validation of invalid token string"""
@@ -196,7 +199,8 @@ class TestTokenServiceValidate:
             user_id=str(user.id), duration_hours=1, db=test_db
         )
 
-        # Manually expire the token in database
+        # Manually activate and expire the token in database
+        token.activated_at = datetime.utcnow() - timedelta(hours=2)
         token.expires_at = datetime.utcnow() - timedelta(hours=1)
         test_db.commit()
 

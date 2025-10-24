@@ -49,7 +49,9 @@ class TokenService:
         token_string = secrets.token_urlsafe(48)
 
         now = datetime.utcnow()
-        expires_at = now + timedelta(hours=duration_hours)
+        # expires_at будет установлен при первой активации токена
+        # Это позволяет пользователю получить полное время использования
+        # с момента первого обращения к proxy, а не с момента покупки
 
         # Create token record
         db_token = AccessToken(
@@ -57,7 +59,7 @@ class TokenService:
             token=token_string,
             duration_hours=duration_hours,
             created_at=now,
-            expires_at=expires_at,
+            expires_at=None,  # Будет установлен при активации
             is_active=True,
         )
 
@@ -94,21 +96,28 @@ class TokenService:
                 TokenService._remove_cached_token(token)
 
         # Check database (slow path)
+        # Находим токен: активный, не отозванный, и либо не активирован (expires_at=NULL),
+        # либо активирован но еще не истек
         db_token = (
             db.query(AccessToken)
             .filter(
                 AccessToken.token == token,
                 AccessToken.is_active == True,
                 AccessToken.revoked_at == None,
-                AccessToken.expires_at > datetime.utcnow(),
             )
             .first()
         )
 
         if db_token:
-            # Activate token on first use
+            # Проверяем, не истек ли уже активированный токен
+            if db_token.expires_at and db_token.expires_at <= datetime.utcnow():
+                return False, None
+
+            # Активируем токен при первом использовании
             if not db_token.activated_at:
-                db_token.activated_at = datetime.utcnow()
+                now = datetime.utcnow()
+                db_token.activated_at = now
+                db_token.expires_at = now + timedelta(hours=db_token.duration_hours)
                 db.commit()
                 db.refresh(db_token)
 
@@ -142,10 +151,15 @@ class TokenService:
         query = db.query(AccessToken).filter(AccessToken.user_id == user_id)
 
         if active_only:
+            # Активный токен = is_active=True, не отозван, и (не активирован ИЛИ не истек)
+            from sqlalchemy import or_
             query = query.filter(
                 AccessToken.is_active == True,
                 AccessToken.revoked_at == None,
-                AccessToken.expires_at > datetime.utcnow(),
+                or_(
+                    AccessToken.expires_at == None,  # Не активирован еще
+                    AccessToken.expires_at > datetime.utcnow(),  # Активирован но не истек
+                ),
             )
 
         return query.order_by(AccessToken.created_at.desc()).all()
@@ -154,6 +168,10 @@ class TokenService:
     def _cache_token(token: AccessToken):
         """Cache token in Redis"""
         try:
+            # Кэшируем только активированные токены (с expires_at)
+            if not token.expires_at:
+                return
+
             redis = get_redis_client()
             token_hash = hashlib.sha256(token.token.encode()).hexdigest()
             key = f"active_token:{token_hash}"

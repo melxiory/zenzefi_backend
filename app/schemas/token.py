@@ -24,7 +24,7 @@ class TokenResponse(BaseModel):
     token: str
     duration_hours: int
     created_at: datetime
-    expires_at: datetime
+    expires_at: Optional[datetime] = None  # NULL until token is activated
     activated_at: Optional[datetime] = None
     is_active: bool
 
