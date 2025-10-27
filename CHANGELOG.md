@@ -5,6 +5,13 @@ All notable changes to the Zenzefi Backend project will be documented in this fi
 ## [Unreleased]
 
 ### Added
+- Docker deployment support (2025-01-27)
+  - Complete Docker Compose configuration for production
+  - Automated Docker deployment script (scripts/deploy_docker.sh)
+  - Docker deployment guide (DEPLOYMENT_DOCKER.md)
+  - All services in containers: PostgreSQL, Redis, Backend, Nginx, Certbot
+  - Docker-based backup and monitoring procedures
+  - 5-10 minute deployment vs 30+ minutes for native installation
 - Desktop client support via `X-Local-Url` header (2025-01-27)
   - Backend now reads `X-Local-Url` header from desktop client requests
   - Dynamic content rewriting based on local proxy URL

@@ -240,9 +240,28 @@ zenzefi-backend/
 
 ## Production Deployment
 
-### Автоматическая установка
+### 🐳 Docker Deployment (Рекомендуется)
 
-Быстрая установка на production сервер (Ubuntu 22.04):
+Самый простой и быстрый способ - используйте Docker:
+
+```bash
+# Скачать скрипт
+wget https://raw.githubusercontent.com/yourusername/zenzefi_backend/main/scripts/deploy_docker.sh
+
+# Запустить (требуется root)
+sudo bash deploy_docker.sh
+```
+
+**Преимущества Docker:**
+- ⚡ Установка за 5-10 минут
+- 📦 Всё в контейнерах (PostgreSQL, Redis, Backend, Nginx)
+- 🔒 Автоматический SSL через Let's Encrypt
+- 🔄 Легкие обновления и откаты
+- 💾 Автоматические backup
+
+### 📦 Native Installation
+
+Классическая установка без Docker:
 
 ```bash
 # Скачать скрипт
@@ -252,19 +271,20 @@ wget https://raw.githubusercontent.com/yourusername/zenzefi_backend/main/scripts
 sudo bash deploy.sh
 ```
 
-Скрипт автоматически установит и настроит:
-- PostgreSQL 15
-- Redis
+Установит:
+- PostgreSQL 15 (native)
+- Redis (native)
 - Python 3.11 + Poetry
 - Nginx с SSL/TLS (Let's Encrypt)
 - Systemd service
 - Backup скрипт
 
-### Документация
+### 📚 Документация
 
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Полное руководство по деплою с подробными инструкциями
-- **[QUICKSTART.md](./QUICKSTART.md)** - Шпаргалка по основным командам администрирования
-- **[CLAUDE.md](./CLAUDE.md)** - Документация для разработки (для Claude Code)
+- **[DEPLOYMENT_DOCKER.md](./DEPLOYMENT_DOCKER.md)** - 🐳 Docker deployment (рекомендуется)
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - 📦 Native installation
+- **[QUICKSTART.md](./QUICKSTART.md)** - Шпаргалка по основным командам
+- **[CLAUDE.md](./CLAUDE.md)** - Документация для разработки
 
 ### После установки
 
