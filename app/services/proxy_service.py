@@ -142,6 +142,16 @@ class ProxyService:
         Returns:
             Response: Proxied response from Zenzefi server
         """
+        # Read X-Local-Url header from desktop client (if present)
+        # Desktop client sends its local proxy URL (e.g., https://127.0.0.1:61000)
+        # This URL will be used for content rewriting instead of /api/v1/proxy prefix
+        local_url = request.headers.get('X-Local-Url')
+        use_desktop_client = local_url is not None
+
+        if use_desktop_client:
+            local_url = local_url.rstrip('/')
+            logger.debug(f"Desktop client detected: X-Local-Url = {local_url}")
+
         # Build target URL
         target_url = f"{settings.ZENZEFI_TARGET_URL}/{path}" if path else settings.ZENZEFI_TARGET_URL
 
@@ -152,6 +162,7 @@ class ProxyService:
             if key_lower not in [
                 "host",
                 "x-access-token",
+                "x-local-url",  # Desktop client header, don't forward to upstream
                 "content-length",
                 "transfer-encoding",
             ]:
@@ -235,15 +246,26 @@ class ProxyService:
                     f"Size: {len(response.content)} bytes"
                 )
 
-                # Get content rewriter instance
-                content_rewriter = ProxyService.get_content_rewriter()
+                # Get or create content rewriter instance
+                # For desktop client, create dynamic rewriter with local_url
+                # For direct API access, use singleton with backend_url
+                if use_desktop_client:
+                    from app.services.content_rewriter import ContentRewriter
+                    content_rewriter = ContentRewriter(
+                        upstream_url=settings.ZENZEFI_TARGET_URL,
+                        backend_url=local_url
+                    )
+                    logger.debug(f"Created dynamic ContentRewriter for desktop client: {local_url}")
+                else:
+                    content_rewriter = ProxyService.get_content_rewriter()
 
                 # Rewrite content to fix relative URLs
                 content = response.content
                 content_type = response.headers.get("content-type", "")
 
                 # Rewrite JavaScript to fix hardcoded URLs (for SockJS /ws/info)
-                if "javascript" in content_type:
+                # Only needed for direct API access, not desktop client
+                if "javascript" in content_type and not use_desktop_client:
                     try:
                         js_content = content.decode('utf-8')
                         # Replace /ws/info with /api/v1/proxy/ws/info in JS
@@ -275,12 +297,16 @@ class ProxyService:
                         if not access_token:
                             access_token = request.headers.get('X-Access-Token', '')
 
+                        # For desktop client, don't add prefix (desktop client handles routing)
+                        # For direct access, use /api/v1/proxy prefix
+                        proxy_prefix = '' if use_desktop_client else '/api/v1/proxy'
+
                         proxy_script = f"""
 <script type="text/javascript">
 // IMMEDIATE EXECUTION - Install interceptors BEFORE any other code runs
 (function() {{
     console.log('[Zenzefi Proxy] Script loaded - installing interceptors immediately!');
-    const proxyPrefix = '/api/v1/proxy';
+    const proxyPrefix = '{proxy_prefix}';
 
     // Store access token for WebSocket use
     const ACCESS_TOKEN = '{access_token}';
@@ -413,20 +439,24 @@ class ProxyService:
                             text_content = proxy_script + '\n' + text_content
                             logger.debug("Injected proxy intercept script at document start")
 
-                        # Also rewrite static asset URLs in HTML
-                        text_content = re.sub(
-                            r'(href|src)="(/[^"]*)"',
-                            r'\1="/api/v1/proxy\2"',
-                            text_content
-                        )
-                        text_content = re.sub(
-                            r"(href|src)='(/[^']*)'",
-                            r"\1='/api/v1/proxy\2'",
-                            text_content
-                        )
+                        # Also rewrite static asset URLs in HTML (only for direct API access)
+                        # Desktop client doesn't need this - it handles routing itself
+                        if not use_desktop_client:
+                            text_content = re.sub(
+                                r'(href|src)="(/[^"]*)"',
+                                r'\1="/api/v1/proxy\2"',
+                                text_content
+                            )
+                            text_content = re.sub(
+                                r"(href|src)='(/[^']*)'",
+                                r"\1='/api/v1/proxy\2'",
+                                text_content
+                            )
+                            logger.debug(f"Rewrote URLs in {content_type} to proxy through /api/v1/proxy/")
+                        else:
+                            logger.debug(f"Desktop client detected - skipping static asset URL rewriting")
 
                         content = text_content.encode('utf-8')
-                        logger.debug(f"Rewrote URLs in {content_type} to proxy through /api/v1/proxy/")
                     except Exception as e:
                         logger.warning(f"Failed to rewrite content: {e}")
                         # Fall back to original content if rewriting fails

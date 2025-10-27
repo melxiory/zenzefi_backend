@@ -238,9 +238,56 @@ zenzefi-backend/
 - CORS configuration
 - CI/CD pipeline
 
+## Production Deployment
+
+### Автоматическая установка
+
+Быстрая установка на production сервер (Ubuntu 22.04):
+
+```bash
+# Скачать скрипт
+wget https://raw.githubusercontent.com/yourusername/zenzefi_backend/main/scripts/deploy.sh
+
+# Запустить (требуется root)
+sudo bash deploy.sh
+```
+
+Скрипт автоматически установит и настроит:
+- PostgreSQL 15
+- Redis
+- Python 3.11 + Poetry
+- Nginx с SSL/TLS (Let's Encrypt)
+- Systemd service
+- Backup скрипт
+
+### Документация
+
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Полное руководство по деплою с подробными инструкциями
+- **[QUICKSTART.md](./QUICKSTART.md)** - Шпаргалка по основным командам администрирования
+- **[CLAUDE.md](./CLAUDE.md)** - Документация для разработки (для Claude Code)
+
+### После установки
+
+1. Обновите `.env` с вашими настройками:
+   ```bash
+   sudo nano /home/zenzefi/apps/zenzefi_backend/.env
+   ```
+
+2. Перезапустите сервис:
+   ```bash
+   sudo systemctl restart zenzefi-backend
+   ```
+
+3. Проверьте статус:
+   ```bash
+   sudo systemctl status zenzefi-backend
+   ```
+
+4. API будет доступен по адресу: `https://api.yourdomain.com`
+
 ## Разработка
 
-Для получения подробной информации о разработке см. [BACKEND.md](./BACKEND.md)
+Для получения подробной информации о разработке см. [CLAUDE.md](./CLAUDE.md)
 
 ## Лицензия
 
