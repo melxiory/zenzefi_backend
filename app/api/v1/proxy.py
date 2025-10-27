@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Request, Response, Depends, Header, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, Response, Depends, Header, Cookie, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.database import get_db
 from app.services.token_service import TokenService
 from app.services.proxy_service import ProxyService
@@ -10,20 +11,107 @@ from app.services.proxy_service import ProxyService
 router = APIRouter()
 
 
+@router.post("/authenticate", status_code=status.HTTP_200_OK)
+async def authenticate_with_cookie(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """
+    Validate token and set secure HTTP-only cookie
+
+    Body:
+        {"token": "your_access_token_here"}
+
+    Returns:
+        Authentication status with cookie information
+
+    Raises:
+        HTTPException: If token is invalid or expired
+    """
+    # Read token from request body
+    body = await request.json()
+    token = body.get("token")
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token is required in request body"
+        )
+
+    # Validate token (read-only check, does NOT activate)
+    valid, token_data = TokenService.check_token_status(token, db)
+
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access token"
+        )
+
+    # Calculate cookie max_age based on token expiration
+    # For non-activated tokens, use duration_hours
+    if token_data["is_activated"] and token_data["expires_at"]:
+        expires_at = datetime.fromisoformat(token_data["expires_at"])
+        max_age = int((expires_at - datetime.utcnow()).total_seconds())
+    else:
+        # Token not yet activated - use full duration
+        max_age = token_data["duration_hours"] * 3600
+
+    # Set secure HTTP-only cookie
+    response.set_cookie(
+        key="zenzefi_access_token",
+        value=token,
+        max_age=max_age,  # Lifetime in seconds
+        httponly=True,    # JavaScript cannot read (XSS protection)
+        secure=settings.COOKIE_SECURE,      # HTTPS only in production
+        samesite=settings.COOKIE_SAMESITE,  # Cross-site policy
+        path="/",  # Cookie for entire domain (required for proxy to work)
+        domain=None  # Cookie for current domain
+    )
+
+    return {
+        "authenticated": True,
+        "user_id": token_data["user_id"],
+        "token_id": token_data["token_id"],
+        "is_activated": token_data["is_activated"],
+        "expires_at": token_data["expires_at"],
+        "cookie_set": True,
+        "cookie_max_age": max_age,
+        "time_remaining_seconds": max_age
+    }
+
+
+@router.delete("/logout", status_code=status.HTTP_200_OK)
+async def logout(response: Response):
+    """
+    Delete authentication cookie (logout)
+
+    Returns:
+        Logout status
+    """
+    response.delete_cookie(
+        key="zenzefi_access_token",
+        path="/"
+    )
+
+    return {
+        "logged_out": True,
+        "message": "Cookie deleted successfully"
+    }
+
+
 @router.get("/status", status_code=status.HTTP_200_OK)
 async def proxy_status(
-    x_access_token: str = Header(..., alias="X-Access-Token"),
     db: Session = Depends(get_db),
+    zenzefi_access_token: str | None = Cookie(None, alias="zenzefi_access_token"),
+    x_access_token: str | None = Header(None, alias="X-Access-Token"),
 ):
     """
     Check proxy connection status and token validity (read-only, does NOT activate token)
 
-    This endpoint checks if a token is valid WITHOUT activating it. This allows
-    clients to check token status before deciding to connect through the proxy.
-
-    Args:
-        x_access_token: Access token from header
-        db: Database session
+    Authentication (priority order):
+        1. Cookie: zenzefi_access_token
+        2. Header: X-Access-Token
 
     Returns:
         Connection status and token information
@@ -33,8 +121,17 @@ async def proxy_status(
     Raises:
         HTTPException: If token is invalid or expired
     """
+    # Priority: Cookie > Header
+    access_token = zenzefi_access_token or x_access_token
+
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required: provide cookie or X-Access-Token header"
+        )
+
     # Check token status WITHOUT activating it
-    valid, token_data = TokenService.check_token_status(x_access_token, db)
+    valid, token_data = TokenService.check_token_status(access_token, db)
 
     if not valid:
         raise HTTPException(
@@ -45,6 +142,7 @@ async def proxy_status(
     # Build response based on whether token is activated
     response = {
         "connected": True,
+        "authenticated_via": "cookie" if zenzefi_access_token else "header",
         "user_id": token_data["user_id"],
         "token_id": token_data["token_id"],
         "is_activated": token_data["is_activated"],
@@ -77,17 +175,21 @@ async def websocket_proxy(
 
     **IMPORTANT:** This handles WebSocket connections (e.g., /ws/info)
 
+    Authentication (priority order):
+        1. Query param: ?token=<access_token>
+        2. Cookie: zenzefi_access_token
+
     Args:
         websocket: WebSocket connection
         path: URL path to proxy
         db: Database session
 
     Note:
-        X-Access-Token is extracted from query parameters since
+        X-Access-Token is extracted from query parameters or cookies since
         WebSocket connections from browsers don't support custom headers
     """
-    # Extract token from query parameters or cookies
-    x_access_token = websocket.query_params.get("token") or websocket.cookies.get("X-Access-Token")
+    # Extract token from query parameters or cookies (priority: query > cookie)
+    x_access_token = websocket.query_params.get("token") or websocket.cookies.get("zenzefi_access_token")
 
     if not x_access_token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing access token")
@@ -117,11 +219,17 @@ async def websocket_proxy(
 async def proxy_to_zenzefi(
     request: Request,
     path: str,
-    x_access_token: str = Header(None, alias="X-Access-Token"),
     db: Session = Depends(get_db),
+    # Read token from Cookie OR header (backward compatibility)
+    zenzefi_access_token: str | None = Cookie(None, alias="zenzefi_access_token"),
+    x_access_token: str | None = Header(None, alias="X-Access-Token"),
 ):
     """
-    Proxy all requests to Zenzefi server with token validation
+    Proxy to Zenzefi with Cookie and Header authentication support
+
+    Authentication (priority order):
+        1. Cookie: zenzefi_access_token
+        2. Header: X-Access-Token
 
     **IMPORTANT:** This is a catch-all route that must be defined LAST!
     It forwards requests to the target Zenzefi server, including HTML content.
@@ -131,25 +239,30 @@ async def proxy_to_zenzefi(
     - Specific paths: GET /api/v1/proxy/api/users → https://zenzefi.melxiory.ru/api/users
 
     **Examples:**
-        Browser/Desktop Client:
+        Browser/Desktop Client (with cookie):
         GET http://localhost:8000/api/v1/proxy/
-        Headers: X-Access-Token: your_token
+        Cookie: zenzefi_access_token=your_token
         → Returns Zenzefi web interface HTML
 
-        API Request:
+        API Request (with header):
         GET /api/v1/proxy/api/users/profile
         Headers: X-Access-Token: your_token
         → Forwards to https://zenzefi.melxiory.ru/api/users/profile
 
-    **curl example:**
+    **curl examples:**
+        # With cookie
+        curl -b cookies.txt http://localhost:8000/api/v1/proxy/api/users/me
+
+        # With header
         curl -H "X-Access-Token: your_token" \\
              http://localhost:8000/api/v1/proxy/api/users/me
 
     Args:
         path: URL path to proxy (e.g., "" for root, "api/users/me", "sessions/create")
         request: FastAPI Request object
-        x_access_token: Access token from header (optional for .map files)
         db: Database session
+        zenzefi_access_token: Token from cookie (optional)
+        x_access_token: Token from header (optional)
 
     Returns:
         Proxied response from Zenzefi server (HTML, JSON, etc.)
@@ -167,15 +280,18 @@ async def proxy_to_zenzefi(
             detail="Source maps not available through proxy"
         )
 
+    # Priority: Cookie > Header
+    access_token = zenzefi_access_token or x_access_token
+
     # Check if token is provided
-    if not x_access_token:
+    if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="X-Access-Token header is required",
+            detail="Authentication required: provide cookie or X-Access-Token header",
         )
 
     # Validate token
-    valid, token_data = TokenService.validate_token(x_access_token, db)
+    valid, token_data = TokenService.validate_token(access_token, db)
 
     if not valid:
         raise HTTPException(

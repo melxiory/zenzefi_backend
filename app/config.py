@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # Например: https://api.zenzefi.com или http://localhost:8000
     BACKEND_URL: str = "http://localhost:8000"  # Измените на реальный URL в production
 
+    # Cookie Settings
+    COOKIE_SECURE: bool = False  # Set to True in production (HTTPS only)
+    COOKIE_SAMESITE: str = "lax"  # "strict", "lax", or "none" (none requires HTTPS)
+
     # Token Pricing (ZNC credits) - для MVP будут бесплатными
     TOKEN_PRICE_1H: float = 0.0      # Бесплатно для MVP
     TOKEN_PRICE_12H: float = 0.0     # Бесплатно для MVP

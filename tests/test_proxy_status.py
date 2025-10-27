@@ -110,8 +110,9 @@ class TestProxyStatusEndpoint:
         assert "Invalid or expired" in response.json()["detail"]
 
     def test_status_without_token(self, client: TestClient):
-        """Test /proxy/status without token header returns 422"""
+        """Test /proxy/status without token header returns 401"""
         response = client.get("/api/v1/proxy/status")
 
-        # FastAPI returns 422 for missing required header
-        assert response.status_code == 422
+        # Should return 401 when no authentication is provided (neither cookie nor header)
+        assert response.status_code == 401
+        assert "Authentication required" in response.json()["detail"]

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Zenzefi Backend - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between desktop clients and the target server, enabling monetization through token-based access control.
 
-**Current Status:** MVP Phase (Этап 1) - All core authentication, token generation, and proxy functionality implemented and tested (74/74 tests passing, 84% code coverage).
+**Current Status:** MVP Phase (Этап 1) - All core authentication, token generation, proxy functionality, and cookie-based authentication implemented and tested (85/85 tests passing, 85%+ code coverage).
 
 ## Tech Stack
 
@@ -93,16 +93,30 @@ poetry run mypy app/
 
 ### Request Flow
 
+**Full Architecture (Desktop Client + Browser):**
 ```
-[Desktop Client] → [FastAPI Backend] → [Zenzefi Server]
-   JWT Auth         Token Validation     X-Access-Token
-                           ↓
-                    [PostgreSQL] + [Redis Cache]
+[Browser] → [Local Proxy (HTTPS)] → [FastAPI Backend] → [Zenzefi Server]
+   Cookie         SSL Termination      Cookie Validation     X-Access-Token
+                                       Token Validation
+                                             ↓
+                                      [PostgreSQL] + [Redis Cache]
+```
+
+**Direct API Access (without desktop client):**
+```
+[API Client] → [FastAPI Backend] → [Zenzefi Server]
+  JWT Auth       Token Validation     X-Access-Token
+                        ↓
+                 [PostgreSQL] + [Redis Cache]
 ```
 
 **Two Token Types:**
 1. **JWT Tokens** - For API authentication (register, login, purchase tokens)
 2. **Access Tokens** - For proxy access to Zenzefi server (used by desktop client)
+
+**Two Authentication Methods:**
+1. **JWT Authentication** - For API endpoints (Authorization: Bearer token)
+2. **Cookie Authentication** - For desktop client browser access (zenzefi_access_token cookie)
 
 ### Layer Architecture
 
@@ -189,10 +203,27 @@ TTL: Until token expiration
 - Dependencies: `get_current_user()` or `get_current_active_user()` from `app/api/deps.py`
 - Token generated on login, expires in 60 minutes (configurable)
 
-**Access Token Authentication** (for proxy):
+**Cookie-Based Authentication** (for desktop client browser access):
+- Cookie: `zenzefi_access_token` (HTTP-only, Secure in production)
+- Set via `/api/v1/proxy/authenticate` endpoint
+- Validated on every proxy request via `get_token_from_cookie()` dependency
+- Cookie settings (configurable via environment):
+  - `COOKIE_SECURE` - HTTPS only (default: False for dev, True for production)
+  - `COOKIE_SAMESITE` - Cross-site policy (default: "lax" for dev, "none" for production with HTTPS)
+  - `path="/"` - Available for entire domain (critical for proxy to work)
+  - `httponly=True` - Prevents JavaScript access (XSS protection)
+- Authentication flow:
+  1. Desktop client opens browser with auth page containing access token
+  2. JavaScript calls `/api/v1/proxy/authenticate` with token
+  3. Backend validates token and sets HTTP-only cookie
+  4. All subsequent requests automatically include cookie
+  5. Backend validates cookie, proxies to Zenzefi with X-Access-Token header
+
+**Access Token Authentication** (legacy, for direct API access):
 - Header: `X-Access-Token: {access_token_string}`
 - Validated by TokenService on each proxy request
 - No user dependency - validated directly in proxy endpoint
+- **Note:** Desktop client now uses cookie-based auth instead
 
 ## Testing Architecture
 
@@ -222,6 +253,8 @@ test_user_data   # Sample user credentials
 - `test_token_service.py` - Token generation, validation, caching (14 tests)
 - `test_api_auth.py` - Auth API endpoints (13 tests)
 - `test_api_tokens.py` - Token purchase/validation endpoints (16 tests)
+- `test_cookie_auth.py` - Cookie-based authentication (11 tests)
+- `test_proxy_status.py` - Proxy status endpoint (tests)
 - `test_main.py` - Health checks, CORS, routing (8 tests)
 
 ### Common Test Patterns
@@ -262,6 +295,8 @@ Optional:
 - `REDIS_DB` - Redis database number (default: 0)
 - `ZENZEFI_BASIC_AUTH_USER`, `ZENZEFI_BASIC_AUTH_PASSWORD` - HTTP Basic Auth for upstream
 - `TOKEN_PRICE_*` - Token pricing (currently 0.0 for MVP)
+- `COOKIE_SECURE` - Cookie secure flag (default: False for dev, True for production)
+- `COOKIE_SAMESITE` - Cookie SameSite policy (default: "lax" for dev, "none" for production)
 
 ### Database Connection
 
@@ -290,9 +325,26 @@ Connection pooling configured in `app/core/database.py`.
   - Returns: List of TokenResponse
 
 ### Proxy (`/api/v1/proxy`)
-- `ALL /{path:path}` - Proxy HTTP request to Zenzefi (X-Access-Token required)
-- `WS /{path:path}` - Proxy WebSocket connection (token via query param)
-  - WebSocket URL format: `/api/v1/proxy/path?token=<access_token>`
+
+**Cookie Authentication Endpoints:**
+- `POST /authenticate` - Set authentication cookie
+  - Body: `{"token": "access_token_string"}`
+  - Validates token and sets `zenzefi_access_token` cookie
+  - Returns: `{"user_id": "uuid", "token_id": "uuid", "expires_at": "timestamp"}`
+  - Cookie lifetime matches token expiration
+- `GET /status` - Check authentication status
+  - Requires: `zenzefi_access_token` cookie
+  - Returns: Current token status and expiration info
+- `DELETE /logout` - Delete authentication cookie
+  - Removes `zenzefi_access_token` cookie
+  - Returns: `{"message": "Logged out successfully"}`
+
+**Proxy Endpoints:**
+- `ALL /{path:path}` - Proxy HTTP request to Zenzefi
+  - Auth: Cookie (`zenzefi_access_token`) OR Header (`X-Access-Token`)
+  - Validates authentication, forwards to Zenzefi with X-Access-Token
+- `WS /{path:path}` - Proxy WebSocket connection
+  - Auth: Query param `?token=<access_token>` OR Cookie
   - Token validated before establishing connection
 
 ### Schema Field Mapping
@@ -306,6 +358,28 @@ populate_by_name = True  # Allows both 'id' and 'token_id'
 This prevents serialization errors when returning AccessToken models from endpoints.
 
 ## Critical Implementation Details
+
+### Cookie Authentication Implementation
+
+**Cookie Path Setting (CRITICAL):**
+- Cookie `path` **MUST** be `"/"` (not `"/api/v1/proxy"`)
+- Browser only sends cookies if request path matches or is descendant of cookie path
+- Desktop client proxy forwards all requests to `/api/v1/proxy/*`
+- Setting `path="/api/v1/proxy"` causes cookie not to be sent for `/` or other paths
+- **Migration note:** Changed from `/api/v1/proxy` to `/` in commit "Implement cookie-based authentication"
+
+**Cookie Security Settings:**
+- Development (HTTP): `COOKIE_SECURE=False`, `COOKIE_SAMESITE="lax"`
+- Production (HTTPS): `COOKIE_SECURE=True`, `COOKIE_SAMESITE="none"`
+- `httponly=True` - Always enabled (XSS protection)
+- Cookie lifetime (`max_age`) - Matches token expiration (activated_at + duration_hours)
+
+**Desktop Client Integration:**
+- Local proxy (`https://127.0.0.1:61000`) handles SSL termination
+- All browser requests go through local proxy → backend → Zenzefi
+- Cookie set for local proxy domain, automatically included in all requests
+- Backend validates cookie, adds X-Access-Token header for Zenzefi
+- No JavaScript access to token (HTTP-only cookie)
 
 ### Token Validation Flow
 
@@ -412,3 +486,7 @@ When changing API behavior:
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens
 - Test fixtures automatically clean up: tables dropped, Redis flushed
 - Timezone consistency: use `datetime.utcfromtimestamp()` in tests, `datetime.utcnow()` in code
+- Cookie authentication: Desktop client uses local proxy → backend → Zenzefi architecture
+- Cookie `path` MUST be `"/"` (not `/api/v1/proxy`) for browser to send cookie on all requests
+- `COOKIE_SECURE=False` in development (HTTP), `True` in production (HTTPS required)
+- Desktop client integration tested manually (browser-based flow, not unit testable)
