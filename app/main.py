@@ -20,13 +20,21 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# CORS middleware
+# CORS middleware - UPDATED FOR COOKIE SUPPORT
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify actual origins
-    allow_credentials=True,
+    # IMPORTANT: For cookies, specific origins required (not "*")
+    allow_origins=[
+        "http://localhost:61000",
+        "https://localhost:61000",
+        "http://127.0.0.1:61000",
+        "https://127.0.0.1:61000",
+        # Add other origins as needed
+    ],
+    allow_credentials=True,  # CRITICAL for cookie support
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 

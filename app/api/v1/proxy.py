@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Response, Depends, Header, Cookie, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -218,6 +219,7 @@ async def websocket_proxy(
 )
 async def proxy_to_zenzefi(
     request: Request,
+    response: Response,
     path: str,
     db: Session = Depends(get_db),
     # Read token from Cookie OR header (backward compatibility)
@@ -270,15 +272,63 @@ async def proxy_to_zenzefi(
     Raises:
         HTTPException: 401 if token is invalid or expired
     """
-    # Allow empty path for root URL proxying
-    # Empty path will proxy to the root of Zenzefi server
-
     # Skip source maps - browser doesn't send custom headers for them
     if path.endswith('.map'):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Source maps not available through proxy"
         )
+
+    # Check for token in query parameters (for initial authentication from desktop client)
+    query_token = request.query_params.get("token")
+
+    if query_token:
+        # Validate token (read-only check)
+        valid, token_data = TokenService.check_token_status(query_token, db)
+
+        if not valid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired access token in query parameter"
+            )
+
+        # Calculate cookie max_age based on token expiration
+        if token_data["is_activated"] and token_data["expires_at"]:
+            expires_at = datetime.fromisoformat(token_data["expires_at"])
+            max_age = int((expires_at - datetime.utcnow()).total_seconds())
+        else:
+            # Token not yet activated - use full duration
+            max_age = token_data["duration_hours"] * 3600
+
+        # Redirect to same path without token parameter
+        # ВАЖНО: Если запрос пришел через локальный прокси (X-Local-Url),
+        # редиректим на URL прокси, а не на backend URL
+        local_url = request.headers.get("X-Local-Url")
+        if local_url:
+            # Desktop client - redirect to local proxy URL
+            # path переменная содержит путь БЕЗ префикса /api/v1/proxy (это {path:path} из роута)
+            # Формируем правильный URL для редиректа на локальный прокси
+            redirect_url = f"{local_url.rstrip('/')}/{path}"
+        else:
+            # Direct access - redirect to same backend URL without query params
+            redirect_url = str(request.url).split("?")[0]
+
+        # ВАЖНО: Создаем RedirectResponse и устанавливаем cookie на НЕМ
+        redirect_response = RedirectResponse(url=redirect_url, status_code=status.HTTP_303_SEE_OTHER)
+
+        # Устанавливаем cookie на redirect response
+        redirect_response.set_cookie(
+            key="zenzefi_access_token",
+            value=query_token,
+            max_age=max_age,
+            httponly=True,
+            secure=settings.COOKIE_SECURE,
+            samesite=settings.COOKIE_SAMESITE,
+            path="/",
+            domain=None
+        )
+
+        return redirect_response
 
     # Priority: Cookie > Header
     access_token = zenzefi_access_token or x_access_token

@@ -4,7 +4,15 @@
       "Read(//d/working/My_projects/zenzefi_client/core/**)",
       "Bash(poetry run python:*)",
       "Bash(timeout 10 poetry run python:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Read(//d/working/My_projects/zenzefi_client/**)",
+      "Bash(poetry run pytest:*)",
+      "Read(//c/Users/sibag/Desktop/**)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(mkdir:*)",
+      "Bash(cat:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
