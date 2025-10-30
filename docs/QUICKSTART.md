@@ -532,9 +532,7 @@ BACKEND_URL=https://api.yourdomain.com  # URL backend сервера
 POSTGRES_PASSWORD=...                 # Пароль базы данных
 REDIS_PASSWORD=...                    # Пароль Redis
 
-ZENZEFI_TARGET_URL=...               # URL целевого сервера Zenzefi
-ZENZEFI_BASIC_AUTH_USER=...          # HTTP Basic Auth для Zenzefi
-ZENZEFI_BASIC_AUTH_PASSWORD=...      # HTTP Basic Auth пароль
+ZENZEFI_TARGET_URL=...               # URL целевого сервера Zenzefi (via VPN)
 
 ACCESS_TOKEN_EXPIRE_MINUTES=60       # Время жизни JWT токена
 COOKIE_SECURE=True                    # HTTPS only cookies

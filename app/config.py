@@ -54,10 +54,8 @@ class Settings(BaseSettings):
             f"{values.get('REDIS_PORT')}/{values.get('REDIS_DB')}"
         )
 
-    # Zenzefi Target
+    # Zenzefi Target (via VPN)
     ZENZEFI_TARGET_URL: str = "https://zenzefi-win11-server"
-    ZENZEFI_BASIC_AUTH_USER: Optional[str] = None  # Optional: user for HTTP Basic Auth
-    ZENZEFI_BASIC_AUTH_PASSWORD: Optional[str] = None  # Optional: password for HTTP Basic Auth
 
     # Backend URL (для ContentRewriter)
     # Это URL где доступен ваш backend для клиентов

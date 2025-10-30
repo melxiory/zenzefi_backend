@@ -1,6 +1,5 @@
 import httpx
 import re
-import base64
 import asyncio
 from fastapi import Request, Response, WebSocket
 from loguru import logger
@@ -54,20 +53,10 @@ class ProxyService:
         await websocket.accept()
 
         # Prepare headers for upstream WebSocket
-        headers = {}
-
-        # Add Basic Auth if configured
-        if settings.ZENZEFI_BASIC_AUTH_USER and settings.ZENZEFI_BASIC_AUTH_PASSWORD:
-            credentials = f"{settings.ZENZEFI_BASIC_AUTH_USER}:{settings.ZENZEFI_BASIC_AUTH_PASSWORD}"
-            encoded = base64.b64encode(credentials.encode()).decode()
-            headers["Authorization"] = f"Basic {encoded}"
-            logger.debug("Added HTTP Basic Auth for WebSocket")
-
-        # Add custom headers
-        headers.update({
+        headers = {
             "X-User-Id": user_id,
             "X-Token-Id": token_id,
-        })
+        }
 
         try:
             # Connect to upstream WebSocket
@@ -183,14 +172,6 @@ class ProxyService:
                 "X-Token-Id": token_id,
             }
         )
-
-        # Add HTTP Basic Auth if configured and not already present
-        if settings.ZENZEFI_BASIC_AUTH_USER and settings.ZENZEFI_BASIC_AUTH_PASSWORD:
-            if "authorization" not in headers:
-                credentials = f"{settings.ZENZEFI_BASIC_AUTH_USER}:{settings.ZENZEFI_BASIC_AUTH_PASSWORD}"
-                encoded = base64.b64encode(credentials.encode()).decode()
-                headers["Authorization"] = f"Basic {encoded}"
-                logger.debug("Added HTTP Basic Auth from config")
 
         try:
             async with httpx.AsyncClient(

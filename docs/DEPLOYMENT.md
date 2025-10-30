@@ -295,10 +295,8 @@ REDIS_DB=0
 # JWT Token Settings
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-# Zenzefi Target Server
+# Zenzefi Target Server (via VPN)
 ZENZEFI_TARGET_URL=https://zenzefi.melxiory.ru
-ZENZEFI_BASIC_AUTH_USER=
-ZENZEFI_BASIC_AUTH_PASSWORD=
 
 # Backend URL (for ContentRewriter)
 # This is the URL where your backend is accessible to clients
