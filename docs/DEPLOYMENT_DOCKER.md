@@ -262,7 +262,8 @@ sudo nano Dockerfile
 Содержимое:
 
 ```dockerfile
-FROM python:3.11-slim
+# Production Dockerfile for Zenzefi Backend
+FROM python:3.13-slim
 
 # Set working directory
 WORKDIR /app
@@ -275,12 +276,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-RUN pip install poetry==1.7.1
+RUN pip install --no-cache-dir poetry==1.8.3
 
 # Copy project files
 COPY pyproject.toml poetry.lock ./
 
 # Configure Poetry and install dependencies
+# - no virtualenv (running in container)
+# - no dev dependencies (production)
+# - no root (app package installed separately)
 RUN poetry config virtualenvs.create false \
     && poetry install --no-dev --no-root --no-interaction --no-ansi
 
@@ -292,6 +296,17 @@ COPY alembic.ini ./
 # Create logs directory
 RUN mkdir -p /app/logs
 
+# Create non-root user for security
+RUN useradd -m -u 1000 zenzefi && chown -R zenzefi:zenzefi /app
+USER zenzefi
+
+# Expose port (not strictly necessary as container networking handles it)
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
 # Run migrations and start application
 CMD poetry run alembic upgrade head && \
     poetry run uvicorn app.main:app \
@@ -300,7 +315,8 @@ CMD poetry run alembic upgrade head && \
     --workers 4 \
     --log-level info \
     --access-log \
-    --proxy-headers
+    --proxy-headers \
+    --forwarded-allow-ips '*'
 ```
 
 #### .env.prod
@@ -338,16 +354,25 @@ ZENZEFI_TARGET_URL=https://zenzefi.melxiory.ru
 ZENZEFI_BASIC_AUTH_USER=
 ZENZEFI_BASIC_AUTH_PASSWORD=
 
-# Token Pricing (MVP)
+# Backend URL (for ContentRewriter)
+# This is the URL where your backend is accessible to clients
+BACKEND_URL=https://api.yourdomain.com
+
+# Cookie Settings (Production - HTTPS required)
+# IMPORTANT: Set COOKIE_SECURE=True in production (requires HTTPS)
+# COOKIE_SAMESITE options: "strict", "lax", "none" (none requires HTTPS)
+COOKIE_SECURE=True
+COOKIE_SAMESITE=none
+
+# JWT Token Settings
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# Token Pricing (MVP - all free)
 TOKEN_PRICE_1H=0.0
 TOKEN_PRICE_12H=0.0
 TOKEN_PRICE_24H=0.0
-TOKEN_PRICE_WEEK=0.0
-TOKEN_PRICE_MONTH=0.0
-
-# Cookie Settings
-COOKIE_SECURE=True
-COOKIE_SAMESITE=none
+TOKEN_PRICE_7D=0.0
+TOKEN_PRICE_30D=0.0
 ```
 
 **Сгенерировать SECRET_KEY:**

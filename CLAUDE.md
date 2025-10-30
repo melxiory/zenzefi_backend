@@ -10,6 +10,7 @@ Zenzefi Backend - Authentication and proxy server for controlling access to Zenz
 
 ## Tech Stack
 
+- **Python 3.13+** - Runtime environment
 - **FastAPI 0.119+** - Async web framework
 - **PostgreSQL 15+** - Primary database (SQLAlchemy 2.0 ORM)
 - **Redis 7+** - Token caching, sessions
@@ -17,17 +18,38 @@ Zenzefi Backend - Authentication and proxy server for controlling access to Zenz
 - **Pydantic v2** - Data validation
 - **PyJWT** - JWT tokens for API authentication
 - **pytest** - Testing framework with real PostgreSQL and Redis
+- **Poetry** - Dependency management
 
 ## Common Commands
+
+### Prerequisites
+
+```bash
+# Install Poetry (if not already installed)
+curl -sSL https://install.python-poetry.org | python3 -
+
+# Install dependencies
+poetry install
+
+# Copy environment file
+cp .env.example .env
+# Edit .env with your settings
+```
 
 ### Development Server
 
 ```bash
-# Start dev server with hot reload
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
 # Start database and Redis (required for development)
 docker-compose -f docker-compose.dev.yml up -d
+
+# Check services are running
+docker-compose -f docker-compose.dev.yml ps
+
+# Apply database migrations
+poetry run alembic upgrade head
+
+# Start dev server with hot reload
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 # Stop services
 docker-compose -f docker-compose.dev.yml down
@@ -69,9 +91,16 @@ poetry run pytest tests/ --cov=app --cov-report=term
 
 # Run with HTML coverage report
 poetry run pytest tests/ --cov=app --cov-report=html
+
+# Run tests in parallel (faster)
+poetry run pytest tests/ -n auto
 ```
 
-**Important:** Tests require PostgreSQL and Redis running via `docker-compose.dev.yml`. Tests use real services, not mocks, for integration testing.
+**Important:**
+- Tests require PostgreSQL and Redis running via `docker-compose.dev.yml`
+- Tests use **real services**, not mocks, for integration testing
+- Tests use a separate `zenzefi_test` database (must be created manually in PostgreSQL)
+- Create test database: `docker exec -it zenzefi-postgres-dev psql -U zenzefi -c "CREATE DATABASE zenzefi_test;"`
 
 ### Code Quality
 
@@ -87,6 +116,53 @@ poetry run flake8 app/
 
 # Type checking
 poetry run mypy app/
+```
+
+### Docker Management
+
+```bash
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f
+
+# View PostgreSQL logs only
+docker-compose -f docker-compose.dev.yml logs -f postgres
+
+# View Redis logs only
+docker-compose -f docker-compose.dev.yml logs -f redis
+
+# Restart services
+docker-compose -f docker-compose.dev.yml restart
+
+# Remove volumes (clean slate)
+docker-compose -f docker-compose.dev.yml down -v
+
+# Access PostgreSQL shell
+docker exec -it zenzefi-postgres-dev psql -U zenzefi -d zenzefi_dev
+
+# Access Redis CLI
+docker exec -it zenzefi-redis-dev redis-cli
+```
+
+### Utility Scripts
+
+```bash
+# Initialize database (create tables)
+poetry run python scripts/init_db.py
+
+# Create superuser
+poetry run python scripts/create_superuser.py
+
+# Reset database (drop and recreate all tables)
+poetry run python scripts/reset_database.py
+
+# Check database status
+poetry run python scripts/check_database.py
+
+# Clear database (delete all data but keep tables)
+poetry run python scripts/clear_database.py
+
+# Create test database
+poetry run python scripts/create_test_database.py
 ```
 
 ## Architecture
@@ -166,6 +242,7 @@ app/
 - Rewrites relative URLs to use proxy prefix (/api/v1/proxy)
 - Handles Location headers and other URL-based response headers
 - Singleton pattern with lazy initialization in ProxyService
+- **Note:** Desktop Client does NOT have ContentRewriter - this is ONLY in Backend Server
 
 ### Database Models
 
@@ -242,9 +319,11 @@ Tests use **real services** (not mocks):
 test_db          # Fresh PostgreSQL session (creates/drops tables)
 fake_redis       # Real Redis client (flushes before/after test)
 client           # FastAPI TestClient with DB + Redis overrides
-authenticated_client  # Client with registered user + JWT token
-test_user_data   # Sample user credentials
+test_user_data   # Sample user credentials (email, username, password)
+test_user_data_2 # Second user credentials for multi-user tests
 ```
+
+**Note:** `authenticated_client` is defined locally in test files (e.g., `test_api_tokens.py`), not in `conftest.py`. It creates a registered user with JWT token in headers.
 
 ### Test Organization
 
@@ -270,6 +349,21 @@ assert token.activated_at is not None
 
 **Testing API with authentication:**
 ```python
+@pytest.fixture
+def authenticated_client(client: TestClient, test_user_data: dict, fake_redis):
+    """Define this fixture locally in your test file"""
+    # Register user
+    client.post("/api/v1/auth/register", json=test_user_data)
+
+    # Login to get JWT token
+    login_data = {"email": test_user_data["email"], "password": test_user_data["password"]}
+    login_response = client.post("/api/v1/auth/login", json=login_data)
+    jwt_token = login_response.json()["access_token"]
+
+    # Add token to headers
+    client.headers = {"Authorization": f"Bearer {jwt_token}"}
+    return client
+
 def test_something(authenticated_client: TestClient):
     # JWT token already in headers
     response = authenticated_client.post("/api/v1/tokens/purchase",
@@ -375,8 +469,12 @@ This prevents serialization errors when returning AccessToken models from endpoi
 - Cookie lifetime (`max_age`) - Matches token expiration (activated_at + duration_hours)
 
 **Desktop Client Integration:**
-- Local proxy (`https://127.0.0.1:61000`) handles SSL termination
-- All browser requests go through local proxy → backend → Zenzefi
+- Desktop Client is a **simplified forwarding proxy** (does NOT do content rewriting, caching, or authentication validation)
+- Local proxy (`https://127.0.0.1:61000`) handles SSL termination only
+- All browser requests forwarded to backend: local proxy → backend → Zenzefi
+- Desktop Client forwards cookies from browser to backend
+- Desktop Client sends `X-Local-Url` header to backend for proper URL rewriting
+- Backend performs ALL processing: authentication, content rewriting, caching
 - Cookie set for local proxy domain, automatically included in all requests
 - Backend validates cookie, adds X-Access-Token header for Zenzefi
 - No JavaScript access to token (HTTP-only cookie)
@@ -478,6 +576,90 @@ When changing API behavior:
 - **ReDoc:** http://localhost:8000/redoc
 - **Health Check:** http://localhost:8000/health
 
+## Common Development Issues
+
+### Database Connection Errors
+
+**Issue:** "could not connect to server" or "password authentication failed"
+```bash
+# Check if PostgreSQL is running
+docker-compose -f docker-compose.dev.yml ps
+
+# Check PostgreSQL logs
+docker-compose -f docker-compose.dev.yml logs postgres
+
+# Restart PostgreSQL
+docker-compose -f docker-compose.dev.yml restart postgres
+
+# Verify connection manually
+docker exec -it zenzefi-postgres-dev psql -U zenzefi -d zenzefi_dev
+```
+
+### Redis Connection Errors
+
+**Issue:** "Error connecting to Redis"
+```bash
+# Check if Redis is running
+docker-compose -f docker-compose.dev.yml ps
+
+# Test Redis connection
+docker exec -it zenzefi-redis-dev redis-cli ping
+
+# Check Redis logs
+docker-compose -f docker-compose.dev.yml logs redis
+```
+
+### Migration Errors
+
+**Issue:** Migration conflicts or "target database is not up to date"
+```bash
+# Check current migration version
+poetry run alembic current
+
+# View migration history
+poetry run alembic history
+
+# Downgrade to previous version
+poetry run alembic downgrade -1
+
+# Upgrade to latest
+poetry run alembic upgrade head
+
+# Reset database completely (CAUTION: deletes all data)
+poetry run python scripts/reset_database.py
+```
+
+### Test Database Setup
+
+**Issue:** Tests fail with "database does not exist"
+```bash
+# Create test database
+docker exec -it zenzefi-postgres-dev psql -U zenzefi -c "CREATE DATABASE zenzefi_test;"
+
+# Or use the script
+poetry run python scripts/create_test_database.py
+
+# Verify test database exists
+docker exec -it zenzefi-postgres-dev psql -U zenzefi -c "\l"
+```
+
+### Port Conflicts
+
+**Issue:** "Address already in use" errors
+```bash
+# Check what's using port 8000 (Windows)
+netstat -ano | findstr :8000
+
+# Check what's using port 5432 (PostgreSQL)
+netstat -ano | findstr :5432
+
+# Check what's using port 6379 (Redis)
+netstat -ano | findstr :6379
+
+# Kill process by PID (Windows)
+taskkill /PID <pid> /F
+```
+
 ## Notes for Claude Code
 
 - All tests must pass before considering work complete
@@ -489,4 +671,9 @@ When changing API behavior:
 - Cookie authentication: Desktop client uses local proxy → backend → Zenzefi architecture
 - Cookie `path` MUST be `"/"` (not `/api/v1/proxy`) for browser to send cookie on all requests
 - `COOKIE_SECURE=False` in development (HTTP), `True` in production (HTTPS required)
+- Desktop Client is a **simplified forwarding proxy** - does NOT do content rewriting, caching, or auth validation
+- Desktop Client forwards ALL requests to Backend Server (127.0.0.1:8000)
+- Desktop Client sends `X-Local-Url` header so Backend knows to rewrite URLs for local proxy domain
+- ALL business logic (auth, caching, rewriting, WebSocket) is in Backend Server
 - Desktop client integration tested manually (browser-based flow, not unit testable)
+- Development primarily on Windows; commands may need adjustment for Linux/Mac

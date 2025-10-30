@@ -76,17 +76,17 @@ ufw status
 
 ## 2. Установка зависимостей
 
-### 2.1 Python 3.11+
+### 2.1 Python 3.13+
 
 ```bash
-# Установить Python 3.11
+# Установить Python 3.13
 apt install software-properties-common -y
 add-apt-repository ppa:deadsnakes/ppa -y
 apt update
-apt install python3.11 python3.11-venv python3.11-dev -y
+apt install python3.13 python3.13-venv python3.13-dev -y
 
 # Установить pip
-curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3.13
 ```
 
 ### 2.2 Poetry (менеджер зависимостей)
@@ -94,7 +94,7 @@ curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 ```bash
 # Установить Poetry как zenzefi пользователь
 su - zenzefi
-curl -sSL https://install.python-poetry.org | python3.11 -
+curl -sSL https://install.python-poetry.org | python3.13 -
 
 # Добавить Poetry в PATH
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -278,7 +278,6 @@ nano .env
 # Application
 DEBUG=False
 SECRET_KEY=generate_secure_random_key_here_min_32_chars
-BACKEND_URL=https://api.yourdomain.com
 
 # Database
 POSTGRES_SERVER=localhost
@@ -293,24 +292,30 @@ REDIS_PORT=6379
 REDIS_PASSWORD=your_redis_password_here
 REDIS_DB=0
 
-# JWT
+# JWT Token Settings
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 # Zenzefi Target Server
 ZENZEFI_TARGET_URL=https://zenzefi.melxiory.ru
-ZENZEFI_BASIC_AUTH_USER=your_upstream_username
-ZENZEFI_BASIC_AUTH_PASSWORD=your_upstream_password
+ZENZEFI_BASIC_AUTH_USER=
+ZENZEFI_BASIC_AUTH_PASSWORD=
+
+# Backend URL (for ContentRewriter)
+# This is the URL where your backend is accessible to clients
+BACKEND_URL=https://api.yourdomain.com
+
+# Cookie Settings (Production - HTTPS required)
+# IMPORTANT: Set COOKIE_SECURE=True in production (requires HTTPS)
+# COOKIE_SAMESITE options: "strict", "lax", "none" (none requires HTTPS)
+COOKIE_SECURE=True
+COOKIE_SAMESITE=none
 
 # Token Pricing (MVP - все бесплатно)
 TOKEN_PRICE_1H=0.0
 TOKEN_PRICE_12H=0.0
 TOKEN_PRICE_24H=0.0
-TOKEN_PRICE_WEEK=0.0
-TOKEN_PRICE_MONTH=0.0
-
-# Cookie Settings (Production - HTTPS required)
-COOKIE_SECURE=True
-COOKIE_SAMESITE=none
+TOKEN_PRICE_7D=0.0
+TOKEN_PRICE_30D=0.0
 ```
 
 **Важно**: Сгенерируйте надежный `SECRET_KEY`:
