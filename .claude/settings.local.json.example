@@ -1,21 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(poetry run python:*)",
-      "Bash(poetry run pytest:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
+      "Read(//d/working/My_projects/zenzefi_client/**)",
+      "Read(//c/Users/sibag/.claude/**)",
+      "Bash(poetry run *:*)",
+      "Bash(git *:*)",
+      "Bash(python *:*)",
       "Bash(mkdir:*)",
-      "Bash(python:*)",
-      "Bash(poetry add:*)"
+      "Bash(mv:*)"
     ],
     "deny": [],
     "ask": []
   },
   "enabledMcpjsonServers": [
-    "postgres",
-    "docker",
-    "redis-tools",
-    "zenzefi-api"
+    "redis-tools"
   ]
 }
