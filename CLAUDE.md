@@ -48,8 +48,11 @@ docker-compose -f docker-compose.dev.yml ps
 # Apply database migrations
 poetry run alembic upgrade head
 
-# Start dev server with hot reload
+# Start dev server with hot reload (option 1: uvicorn directly)
 poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Start dev server with hot reload (option 2: use run_dev.py for easier IDE debugging)
+python run_dev.py
 
 # Stop services
 docker-compose -f docker-compose.dev.yml down
@@ -163,7 +166,12 @@ poetry run python scripts/clear_database.py
 
 # Create test database
 poetry run python scripts/create_test_database.py
+
+# Test authentication flow (register, login, create token)
+poetry run python scripts/test_create_token.py
 ```
+
+**Note:** `test_create_token.py` is a useful script for testing the full authentication flow - it registers a user, logs in, and creates a 24-hour access token. The token is saved to `test_token.txt` for use with the Desktop Client.
 
 ## Architecture
 
@@ -198,7 +206,13 @@ poetry run python scripts/create_test_database.py
 
 ```
 app/
-├── api/v1/           # HTTP endpoints (auth, tokens, users, proxy)
+├── api/
+│   ├── v1/           # HTTP endpoints
+│   │   ├── auth.py       # Authentication endpoints
+│   │   ├── tokens.py     # Token management endpoints
+│   │   ├── users.py      # User profile endpoints
+│   │   └── proxy.py      # Proxy endpoints (HTTP + WebSocket)
+│   └── deps.py       # API dependencies (auth, db, redis)
 ├── services/         # Business logic layer
 │   ├── auth_service.py       # User registration, authentication
 │   ├── token_service.py      # Token generation, validation, caching
@@ -207,6 +221,9 @@ app/
 ├── models/           # SQLAlchemy ORM models (User, AccessToken)
 ├── schemas/          # Pydantic validation schemas
 ├── core/             # Core utilities (security, database, redis, logging)
+├── middleware/       # Middleware (currently empty - reserved for future use)
+├── utils/            # Utilities (currently empty - reserved for future use)
+├── config.py         # Application settings (Pydantic BaseSettings)
 └── main.py           # FastAPI application entry point
 ```
 
@@ -235,7 +252,7 @@ app/
 - Validates X-Access-Token for each request (HTTP header or WS query param)
 - Forwards requests with custom headers (X-User-Id, X-Token-Id)
 - Content rewriting: Injects JavaScript to intercept fetch/XHR/WebSocket
-- Supports HTTP Basic Auth for upstream server (optional)
+- **Note:** HTTP Basic Auth removed (commit: 6fc9422) - now using VPN connection instead
 
 **ContentRewriter** (`app/services/content_rewriter.py`):
 - URL rewriting in proxied content (HTML, CSS, JS, JSON)
@@ -387,10 +404,11 @@ Optional:
 - `ACCESS_TOKEN_EXPIRE_MINUTES` - JWT expiration (default: 60)
 - `REDIS_PASSWORD` - Redis password (default: None)
 - `REDIS_DB` - Redis database number (default: 0)
-- `ZENZEFI_BASIC_AUTH_USER`, `ZENZEFI_BASIC_AUTH_PASSWORD` - HTTP Basic Auth for upstream
 - `TOKEN_PRICE_*` - Token pricing (currently 0.0 for MVP)
 - `COOKIE_SECURE` - Cookie secure flag (default: False for dev, True for production)
 - `COOKIE_SAMESITE` - Cookie SameSite policy (default: "lax" for dev, "none" for production)
+
+**Note:** `ZENZEFI_BASIC_AUTH_USER` and `ZENZEFI_BASIC_AUTH_PASSWORD` were removed in commit 6fc9422 - backend now connects to Zenzefi via VPN without HTTP Basic Auth.
 
 ### Database Connection
 
@@ -575,6 +593,37 @@ When changing API behavior:
 - **API Docs (when running):** http://localhost:8000/docs
 - **ReDoc:** http://localhost:8000/redoc
 - **Health Check:** http://localhost:8000/health
+
+### Additional Documentation
+
+- **[QUICKSTART.md](./docs/QUICKSTART.md)** - Quick reference for common commands
+- **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Native installation guide (PostgreSQL, Redis, Nginx)
+- **[DEPLOYMENT_DOCKER.md](./docs/DEPLOYMENT_DOCKER.md)** - Docker deployment guide (recommended)
+- **[INTEGRATION_PLAN.md](./docs/INTEGRATION_PLAN.md)** - Desktop client integration architecture
+- **[CHANGELOG.md](./docs/CHANGELOG.md)** - Project changelog
+- **[BACKEND.md](./docs/BACKEND.md)** - Detailed backend architecture documentation
+
+## MCP Servers
+
+This project includes several Model Context Protocol (MCP) servers configured in `.mcp.json`:
+
+**postgres** - PostgreSQL database access
+- Direct SQL queries to zenzefi_dev database
+- Schema inspection and data exploration
+
+**docker** - Docker container management
+- Container status, logs, and operations
+- Useful for managing development services
+
+**redis-tools** - Redis operations (`scripts/redis_mcp.py`)
+- Get/scan keys, active token counts
+- Token info retrieval, pattern flushing
+- Redis server info and database size
+
+**zenzefi-api** - Custom API server (`mcp_server.py`)
+- Programmatic access to backend API
+
+These servers are available in Claude Code and can be used for debugging, monitoring, and development tasks.
 
 ## Common Development Issues
 

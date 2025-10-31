@@ -176,13 +176,15 @@ class ProxyService:
         try:
             async with httpx.AsyncClient(
                 verify=False,  # Skip SSL verification for internal VPN
-                timeout=30.0,
+                timeout=60.0,  # Увеличено с 30 до 60 секунд (обработка контента тоже занимает время)
                 follow_redirects=True,  # Follow redirects to get final content
             ) as client:
                 # Read request body
                 body = await request.body()
 
                 # Log request
+                import time
+                start_time = time.time()
                 logger.info(
                     f"Proxy: {request.method} {target_url} | "
                     f"User: {user_id} | Token: {token_id}"
@@ -190,6 +192,7 @@ class ProxyService:
                 logger.debug(f"Request headers to Zenzefi: {dict(headers)}")
 
                 # Execute proxied request
+                logger.debug(f"⏱️ Starting request to Zenzefi: {target_url}")
                 response = await client.request(
                     method=request.method,
                     url=target_url,
@@ -197,6 +200,8 @@ class ProxyService:
                     content=body,
                     params=request.query_params,
                 )
+                zenzefi_time = time.time() - start_time
+                logger.info(f"⏱️ Zenzefi responded in {zenzefi_time:.2f}s")
 
                 # Prepare response headers
                 response_headers = {}
@@ -226,6 +231,9 @@ class ProxyService:
                     f"Proxy response: {response.status_code} | "
                     f"Size: {len(response.content)} bytes"
                 )
+
+                # Track content processing time
+                processing_start = time.time()
 
                 # Get or create content rewriter instance
                 # For desktop client, create dynamic rewriter with local_url
@@ -455,6 +463,14 @@ class ProxyService:
                     logger.debug(
                         f"Content rewritten by ContentRewriter: {len(content)} → {len(rewritten_content)} bytes"
                     )
+
+                # Log total processing time
+                processing_time = time.time() - processing_start
+                total_time = time.time() - start_time
+                logger.info(
+                    f"⏱️ Processing completed: content={processing_time:.2f}s, total={total_time:.2f}s "
+                    f"(Zenzefi: {zenzefi_time:.2f}s, Processing: {processing_time:.2f}s)"
+                )
 
                 # Return proxied response with rewritten content
                 return Response(
