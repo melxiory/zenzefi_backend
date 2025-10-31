@@ -214,3 +214,9 @@ nginx/
 
 # Test files with sensitive data
 test_token.txt
+
+# Claude Code local settings (user-specific permissions)
+.claude/settings.local.json
+
+# MCP server configuration (contains database credentials)
+.mcp.json

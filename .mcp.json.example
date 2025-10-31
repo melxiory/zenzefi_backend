@@ -9,7 +9,7 @@
         "@modelcontextprotocol/server-postgres"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://zenzefi:devpassword@localhost:5432/zenzefi_dev"
+        "DATABASE_URL": "postgresql://USER:PASSWORD@localhost:5432/zenzefi_dev"
       }
     },
     "docker": {

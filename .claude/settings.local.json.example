@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(poetry run python:*)",
+      "Bash(poetry run pytest:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(mkdir:*)",
+      "Bash(python:*)",
+      "Bash(poetry add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledMcpjsonServers": [
+    "postgres",
+    "docker",
+    "redis-tools",
+    "zenzefi-api"
+  ]
+}
