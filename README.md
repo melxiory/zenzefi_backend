@@ -32,6 +32,17 @@ cp .env.example .env
 
 Отредактируйте `.env` файл с вашими настройками.
 
+**Для Claude Code (опционально):**
+
+```bash
+# Настройка MCP серверов
+cp .mcp.json.example .mcp.json
+# Отредактируйте .mcp.json с вашими учётными данными
+
+# Настройка локальных разрешений Claude Code
+cp .claude/settings.local.json.example .claude/settings.local.json
+```
+
 ### 3. Запуск БД и Redis (Docker)
 
 ```bash
