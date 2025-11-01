@@ -142,13 +142,20 @@ print_success "Docker installed and started"
 
 # Clone repository
 print_header "5. Cloning Repository"
-mkdir -p $INSTALL_DIR
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     print_warning "Repository already exists, pulling updates"
     cd $INSTALL_DIR
     git pull origin main
 else
+    # Check if directory exists and is not empty
+    if [ -d "$INSTALL_DIR" ] && [ "$(ls -A $INSTALL_DIR)" ]; then
+        print_error "Directory $INSTALL_DIR exists and is not empty"
+        print_error "Please remove it or choose a different location"
+        exit 1
+    fi
+
+    # Clone repository
     git clone $GIT_REPO $INSTALL_DIR
     cd $INSTALL_DIR
 fi
@@ -157,8 +164,9 @@ print_success "Repository ready"
 
 # Create data directories
 print_header "6. Creating Data Directories"
+cd $INSTALL_DIR
 mkdir -p data/postgres data/redis data/tailscale data/certbot/conf data/certbot/www
-mkdir -p logs
+mkdir -p logs backups
 chmod 755 data/tailscale
 print_success "Data directories created"
 
@@ -312,6 +320,9 @@ print_success "Certbot auto-renewal configured"
 
 # Create backup script
 print_header "17. Creating Backup Script"
+
+# Ensure scripts directory exists
+mkdir -p $INSTALL_DIR/scripts
 
 cat > $INSTALL_DIR/scripts/backup.sh <<EOFBACKUP
 #!/bin/bash
