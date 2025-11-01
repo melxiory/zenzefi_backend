@@ -69,7 +69,7 @@ sudo nano Dockerfile
 # RUN mkdir -p /app/logs && chown -R zenzefi:zenzefi /app
 #
 # USER zenzefi
-
+  
 # 5. Пересобрать backend образ
 sudo docker-compose -f docker-compose.prod.yml build backend
 
@@ -89,38 +89,70 @@ sudo docker-compose -f docker-compose.prod.yml logs -f nginx
 curl http://localhost:8000/health
 ```
 
-## Альтернативное решение (если вышеуказанное не сработало)
+## Альтернативное решение (Самый простой способ - БЕЗ пересборки!)
 
-### Быстрое исправление без пересборки:
+Если вы не хотите редактировать Dockerfile и пересобирать образ, используйте этот способ:
 
 ```bash
 cd /opt/zenzefi
 
-# Остановить контейнеры
+# 1. Остановить контейнеры
 sudo docker-compose -f docker-compose.prod.yml down
 
-# Создать nginx.conf (если не создан выше)
+# 2. Создать nginx.conf (если ещё не создан)
 sudo tee nginx/nginx.conf > /dev/null <<'EOF'
-[содержимое из шага 3 выше]
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 20M;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
+
+    include /etc/nginx/conf.d/*.conf;
+}
 EOF
 
-# Создать volume для logs с правильными правами
-sudo docker volume create zenzefi-logs
+# 3. Создать директорию logs на хосте с правильными правами
+sudo mkdir -p logs
+sudo chmod 777 logs  # Разрешить всем писать (временно для упрощения)
 
-# Обновить docker-compose.prod.yml - добавить volume для logs в секцию backend:
-sudo nano docker-compose.prod.yml
-
-# Добавьте в секцию backend -> volumes:
-#   - zenzefi-logs:/app/logs
-
-# Добавьте в конец файла (после networks):
-# volumes:
-#   zenzefi-logs:
-#     driver: local
-
-# Запустить контейнеры
+# 4. Запустить контейнеры
 sudo docker-compose -f docker-compose.prod.yml up -d
+
+# 5. Проверить статус (подождите 30-40 секунд)
+sudo docker-compose -f docker-compose.prod.yml ps
 ```
+
+### Пояснение:
+- Директория `logs/` на хосте (/opt/zenzefi/logs) будет смонтирована в контейнер как `/app/logs`
+- `chmod 777` даёт полные права всем (это безопасно, т.к. директория внутри /opt/zenzefi)
+- Docker автоматически создаст файлы логов внутри этой директории
 
 ## Проверка результата
 
