@@ -300,10 +300,12 @@ COPY app/ ./app/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
 
-RUN mkdir -p /app/logs
-
 # Create non-root user for security
-RUN useradd -m -u 1000 zenzefi && chown -R zenzefi:zenzefi /app
+RUN useradd -m -u 1000 zenzefi
+
+# Create logs directory with correct permissions
+RUN mkdir -p /app/logs && chown -R zenzefi:zenzefi /app
+
 USER zenzefi
 
 EXPOSE 8000
@@ -325,6 +327,44 @@ EOFDOCKER
 print_success "Dockerfile created"
 
 # Create Nginx config (temporary HTTP)
+cat > $INSTALL_DIR/nginx/nginx.conf <<'EOFNGINXMAIN'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 20M;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript application/xml+rss;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+EOFNGINXMAIN
+
 cat > $INSTALL_DIR/nginx/conf.d/zenzefi.conf <<EOFNGINX
 upstream backend {
     server backend:8000;
