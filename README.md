@@ -4,14 +4,14 @@
 
 ## Технологический стек
 
-- **FastAPI 0.104+** - async web framework
-- **PostgreSQL 15+** - основная БД
-- **Redis 7+** - кэш, сессии, rate limiting
-- **SQLAlchemy 2.0+** - ORM
-- **Alembic** - миграции БД
-- **Pydantic v2** - валидация данных
-- **PyJWT** - JWT токены
-- **Loguru** - логирование
+- **Python 3.13+** - Runtime environment
+- **FastAPI 0.119+** - Async web framework с поддержкой HTTP/WebSocket
+- **PostgreSQL 15+** - Основная БД (SQLAlchemy 2.0 ORM)
+- **Redis 7+** - Двухуровневый кэш токенов, управление сессиями
+- **Alembic** - Миграции БД
+- **Pydantic v2** - Валидация данных
+- **PyJWT** - JWT токены для API аутентификации (HS256)
+- **pytest** - Тестирование с реальными сервисами (85 тестов, 85%+ покрытие)
 - **Uvicorn** - ASGI сервер
 
 ## Быстрый старт
@@ -117,20 +117,47 @@ poetry run python scripts/init_db.py
 
 # Создание суперпользователя
 poetry run python scripts/create_superuser.py
+
+# Создание тестовой БД
+poetry run python scripts/create_test_database.py
+
+# Тест полного flow аутентификации (регистрация, логин, создание токена)
+poetry run python scripts/test_create_token.py
+
+# Сброс БД (удаление и пересоздание всех таблиц)
+poetry run python scripts/reset_database.py
+
+# Очистка БД (удаление всех данных, но сохранение таблиц)
+poetry run python scripts/clear_database.py
 ```
 
 ### Тестирование
 
 ```bash
-# Запуск всех тестов
-poetry run pytest
+# Запуск всех тестов (требуется запущенные PostgreSQL и Redis)
+poetry run pytest tests/ -v
 
 # Запуск с coverage
-poetry run pytest --cov=app tests/
+poetry run pytest tests/ --cov=app --cov-report=term
+
+# Запуск с HTML coverage report
+poetry run pytest tests/ --cov=app --cov-report=html
+
+# Запуск конкретного файла тестов
+poetry run pytest tests/test_api_tokens.py -v
 
 # Запуск конкретного теста
-poetry run pytest tests/test_auth.py -v
+poetry run pytest tests/test_api_tokens.py::TestTokenPurchaseEndpoint::test_purchase_token_success -v
+
+# Параллельный запуск (быстрее)
+poetry run pytest tests/ -n auto
 ```
+
+**Важно:**
+- Тесты требуют запущенных PostgreSQL и Redis (через `docker-compose.dev.yml`)
+- Используется отдельная БД `zenzefi_test` (создаётся автоматически скриптом)
+- Тесты используют **реальные сервисы**, не моки
+- 85 тестов, 85%+ покрытие кода
 
 ### Код-стайл
 
@@ -150,84 +177,164 @@ poetry run mypy app/
 
 ## API Endpoints
 
-### Authentication
+### Authentication (`/api/v1/auth`)
 
-- `POST /api/v1/auth/register` - Регистрация нового пользователя
-- `POST /api/v1/auth/login` - Логин и получение JWT токена
+- `POST /register` - Регистрация нового пользователя
+- `POST /login` - Логин и получение JWT токена
 
-### Users
+### Users (`/api/v1/users`)
 
-- `GET /api/v1/users/me` - Получить профиль текущего пользователя
-- `PATCH /api/v1/users/me` - Обновить профиль
+- `GET /me` - Получить профиль текущего пользователя (требуется JWT)
 
-### Access Tokens
+### Access Tokens (`/api/v1/tokens`)
 
-- `POST /api/v1/tokens/purchase` - Создать токен доступа (MVP: бесплатно)
-- `GET /api/v1/tokens/my-tokens` - Получить список своих токенов
-- `POST /api/v1/tokens/validate` - Валидировать токен
+- `POST /purchase` - Создать токен доступа (требуется JWT, MVP: бесплатно)
+  - Body: `{"duration_hours": 1|12|24|168|720}`
+  - Returns: TokenResponse с token string
+- `GET /my-tokens?active_only=true` - Получить список токенов пользователя (требуется JWT)
+  - Query param: `active_only` (по умолчанию: true)
 
-### Proxy
+### Proxy (`/api/v1/proxy`)
 
-- `ALL /api/v1/proxy/{path}` - Проксирование к Zenzefi серверу (требует X-Access-Token header)
-- `GET /api/v1/proxy/status` - Статус подключения
+**Аутентификация через Cookie:**
+- `POST /authenticate` - Установить cookie аутентификации
+  - Body: `{"token": "access_token_string"}`
+  - Валидирует токен и устанавливает `zenzefi_access_token` cookie
+  - Returns: `{"user_id": "uuid", "token_id": "uuid", "expires_at": "timestamp"}`
+- `GET /status` - Проверить статус аутентификации
+  - Требует: `zenzefi_access_token` cookie
+  - Returns: Статус текущего токена и информацию об истечении
+- `DELETE /logout` - Удалить cookie аутентификации
+  - Returns: `{"message": "Logged out successfully"}`
+
+**Проксирование запросов:**
+- `ALL /{path:path}` - Проксирование HTTP запроса к Zenzefi
+  - Auth: Cookie (`zenzefi_access_token`) ИЛИ Header (`X-Access-Token`)
+  - Валидирует аутентификацию, пересылает на Zenzefi с X-Access-Token
+- `WS /{path:path}` - Проксирование WebSocket соединения
+  - Auth: Query param `?token=<access_token>` ИЛИ Cookie
+  - Токен валидируется перед установкой соединения
 
 ## Структура проекта
 
 ```
-zenzefi-backend/
+zenzefi_backend/
 ├── app/
 │   ├── api/
 │   │   ├── v1/
-│   │   │   ├── auth.py          # Authentication endpoints
-│   │   │   ├── users.py         # User endpoints
-│   │   │   ├── tokens.py        # Token endpoints
-│   │   │   └── proxy.py         # Proxy endpoints
-│   │   └── deps.py              # API dependencies
+│   │   │   ├── auth.py              # Authentication endpoints
+│   │   │   ├── users.py             # User endpoints
+│   │   │   ├── tokens.py            # Token endpoints
+│   │   │   └── proxy.py             # Proxy endpoints (HTTP + WebSocket)
+│   │   └── deps.py                  # API dependencies
 │   ├── core/
-│   │   ├── database.py          # Database connection
-│   │   ├── redis.py             # Redis connection
-│   │   ├── security.py          # JWT, password hashing
-│   │   └── logging.py           # Logging configuration
+│   │   ├── database.py              # Database connection
+│   │   ├── redis.py                 # Redis connection
+│   │   ├── security.py              # JWT, password hashing
+│   │   └── logging.py               # Logging configuration
 │   ├── models/
-│   │   ├── user.py              # User model
-│   │   └── token.py             # AccessToken model
+│   │   ├── user.py                  # User model
+│   │   └── token.py                 # AccessToken model
 │   ├── schemas/
-│   │   ├── user.py              # User schemas
-│   │   ├── token.py             # Token schemas
-│   │   └── auth.py              # Auth schemas
+│   │   ├── user.py                  # User schemas
+│   │   ├── token.py                 # Token schemas
+│   │   └── auth.py                  # Auth schemas
 │   ├── services/
-│   │   ├── auth_service.py      # Auth business logic
-│   │   ├── token_service.py     # Token business logic
-│   │   └── proxy_service.py     # Proxy business logic
-│   ├── config.py                # Application settings
-│   └── main.py                  # FastAPI application
-├── alembic/                     # Database migrations
-├── scripts/                     # Helper scripts
-├── tests/                       # Tests
-├── docker-compose.dev.yml       # Development Docker setup
-├── pyproject.toml               # Poetry dependencies
-└── README.md                    # This file
+│   │   ├── auth_service.py          # Auth business logic
+│   │   ├── token_service.py         # Token business logic
+│   │   ├── proxy_service.py         # HTTP/WebSocket proxying
+│   │   └── content_rewriter.py      # URL rewriting в проксированном контенте
+│   ├── config.py                    # Application settings
+│   └── main.py                      # FastAPI application
+├── alembic/                         # Database migrations
+├── scripts/                         # Helper scripts
+│   ├── deploy_docker.sh             # Docker deployment script
+│   ├── redis_mcp.py                 # Redis MCP server
+│   └── test_create_token.py         # Test auth flow
+├── tests/                           # Tests (85 тестов, 85%+ coverage)
+│   ├── conftest.py                  # Test fixtures
+│   ├── test_security.py             # Security tests
+│   ├── test_auth_service.py         # Auth service tests
+│   ├── test_token_service.py        # Token service tests
+│   ├── test_api_auth.py             # Auth API tests
+│   ├── test_api_tokens.py           # Token API tests
+│   ├── test_cookie_auth.py          # Cookie auth tests
+│   └── test_main.py                 # Main app tests
+├── .mcp.json                        # MCP servers configuration
+├── docker-compose.dev.yml           # Development Docker setup
+├── pyproject.toml                   # Poetry dependencies
+├── CLAUDE.md                        # Detailed development guide
+└── README.md                        # This file
 ```
 
 ## Переменные окружения
 
 См. `.env.example` для списка всех переменных.
 
-Основные:
-- `SECRET_KEY` - Секретный ключ для JWT (обязательно!)
-- `POSTGRES_*` - Настройки PostgreSQL
-- `REDIS_*` - Настройки Redis
-- `ZENZEFI_TARGET_URL` - URL целевого Zenzefi сервера
-- `DEBUG` - Режим отладки (True/False)
+### Обязательные:
+- `SECRET_KEY` - Секретный ключ для JWT (HS256 algorithm)
+- `POSTGRES_SERVER`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` - Настройки PostgreSQL
+- `REDIS_HOST`, `REDIS_PORT` - Настройки Redis (по умолчанию: redis:6379)
+- `ZENZEFI_TARGET_URL` - URL целевого Zenzefi сервера для проксирования
+- `BACKEND_URL` - URL бэкенда для ContentRewriter (например, http://localhost:8000)
+
+### Cookie Security:
+- `COOKIE_SECURE` - HTTPS only (False для dev/HTTP, True для production/HTTPS)
+- `COOKIE_SAMESITE` - Cross-site политика ("lax" для dev, "none" для production с HTTPS)
+- Cookie `path` всегда `"/"` (хардкод, критично для работы браузера)
+- Cookie `httponly=True` (всегда включено для XSS защиты)
+
+### Опциональные:
+- `DEBUG` - Режим отладки (по умолчанию: False)
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - Время жизни JWT токена (по умолчанию: 60 минут)
+- `REDIS_PASSWORD` - Пароль Redis (по умолчанию: None)
+- `REDIS_DB` - Номер БД Redis (по умолчанию: 0)
+- `TOKEN_PRICE_*` - Цены на токены (сейчас 0.0 для MVP)
+
+## Архитектура
+
+### Поток запросов (Desktop Client + Browser)
+
+```
+[Browser] → [Local Proxy (HTTPS)] → [FastAPI Backend] → [Zenzefi Server]
+   Cookie         SSL Termination      Cookie Validation     X-Access-Token
+                                       Token Validation
+                                             ↓
+                                      [PostgreSQL] + [Redis Cache]
+```
+
+### Два типа токенов
+
+1. **JWT Tokens** - Для API аутентификации (register, login, purchase tokens)
+   - Генерируются при логине через `/api/v1/auth/login`
+   - Алгоритм: HS256 с `SECRET_KEY` из окружения
+   - Payload: `{"sub": user_id, "username": username}` (НЕ email)
+   - Используются в `Authorization: Bearer {token}` заголовке
+   - Истекают через 60 минут (настраивается через `ACCESS_TOKEN_EXPIRE_MINUTES`)
+
+2. **Access Tokens** - Для проксирования к Zenzefi серверу
+   - Генерируются через `/api/v1/tokens/purchase` (требуется JWT auth)
+   - Формат: 64-символьная URL-safe случайная строка (`secrets.token_urlsafe(48)`)
+   - НЕ JWT - простые случайные токены в PostgreSQL
+   - Допустимые длительности: 1, 12, 24, 168 (неделя), 720 (месяц) часов
+   - Двухуровневая валидация: Redis кэш (~1мс) → PostgreSQL (~10мс)
+
+### Методы аутентификации
+
+1. **JWT Authentication** - Для API endpoints (Authorization: Bearer token)
+2. **Cookie Authentication** - Для desktop client браузера (zenzefi_access_token cookie)
 
 ## MVP Features (Этап 1) ✅
 
-- ✅ Регистрация и аутентификация пользователей
-- ✅ JWT токены для API доступа
+- ✅ Регистрация и аутентификация пользователей (JWT)
+- ✅ JWT токены для API доступа (60 минут lifetime)
 - ✅ Создание токенов доступа (бесплатно для MVP)
-- ✅ Валидация токенов
-- ✅ Проксирование запросов к Zenzefi серверу
-- ✅ Кэширование токенов в Redis
+- ✅ Двухуровневое кэширование токенов (Redis + PostgreSQL)
+- ✅ Cookie-based аутентификация для Desktop Client
+- ✅ HTTP и WebSocket проксирование к Zenzefi серверу
+- ✅ Content rewriting (URL перезапись в HTML/CSS/JS)
+- ✅ 85 тестов с реальными сервисами (85%+ покрытие)
+- ✅ MCP серверы (PostgreSQL, Docker, Redis, API)
 
 ## Следующие этапы
 
