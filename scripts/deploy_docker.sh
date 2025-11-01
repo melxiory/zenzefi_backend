@@ -279,7 +279,7 @@ print_success "docker-compose.prod.yml created"
 
 # Create Dockerfile
 cat > $INSTALL_DIR/Dockerfile <<'EOFDOCKER'
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
@@ -289,7 +289,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install poetry==1.7.1
+RUN pip install --no-cache-dir poetry==1.8.3
 
 COPY pyproject.toml poetry.lock ./
 
@@ -302,6 +302,15 @@ COPY alembic.ini ./
 
 RUN mkdir -p /app/logs
 
+# Create non-root user for security
+RUN useradd -m -u 1000 zenzefi && chown -R zenzefi:zenzefi /app
+USER zenzefi
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
 CMD poetry run alembic upgrade head && \
     poetry run uvicorn app.main:app \
     --host 0.0.0.0 \
@@ -309,7 +318,8 @@ CMD poetry run alembic upgrade head && \
     --workers 4 \
     --log-level info \
     --access-log \
-    --proxy-headers
+    --proxy-headers \
+    --forwarded-allow-ips '*'
 EOFDOCKER
 
 print_success "Dockerfile created"
