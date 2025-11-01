@@ -149,7 +149,7 @@ docker exec -it zenzefi-backend python scripts/create_superuser.py
    docker-compose -f docker-compose.prod.tailscale.yml stop nginx
    docker-compose -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
      --standalone --email your-email@example.com --agree-tos \
-     -d zenzefi.melxiory.ru
+     -d melxiorylab.ru
    ```
 
 3. **Переключиться на HTTPS:**
@@ -162,7 +162,7 @@ docker exec -it zenzefi-backend python scripts/create_superuser.py
 
 4. **Проверить:**
    ```bash
-   curl https://zenzefi.melxiory.ru/health
+   curl https://melxiorylab.ru/health
    ```
 
 ---

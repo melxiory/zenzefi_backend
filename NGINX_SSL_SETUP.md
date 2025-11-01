@@ -42,10 +42,10 @@ docker-compose -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
   --email your-email@example.com \
   --agree-tos \
   --no-eff-email \
-  -d zenzefi.melxiory.ru
+  -d melxiorylab.ru
 
 # 3. Проверить, что сертификат создан
-ls -la data/certbot/conf/live/zenzefi.melxiory.ru/
+ls -la data/certbot/conf/live/melxiorylab.ru/
 # Должны быть файлы: fullchain.pem, privkey.pem
 ```
 
@@ -67,7 +67,7 @@ docker-compose -f docker-compose.prod.tailscale.yml restart nginx
 docker logs zenzefi-nginx
 
 # 4. Проверить HTTPS
-curl https://zenzefi.melxiory.ru/health
+curl https://melxiorylab.ru/health
 # Должен вернуть: {"status": "healthy"}
 ```
 
@@ -127,16 +127,16 @@ docker exec zenzefi-nginx netstat -tlnp
 
 ```bash
 # Проверить права доступа к сертификатам
-ls -la data/certbot/conf/live/zenzefi.melxiory.ru/
+ls -la data/certbot/conf/live/melxiorylab.ru/
 
 # Проверить, что сертификаты смонтированы в контейнер
-docker exec zenzefi-nginx ls -la /etc/letsencrypt/live/zenzefi.melxiory.ru/
+docker exec zenzefi-nginx ls -la /etc/letsencrypt/live/melxiorylab.ru/
 
 # Проверить SSL конфигурацию
 docker exec zenzefi-nginx nginx -T | grep ssl_certificate
 
 # Проверить срок действия сертификата
-openssl x509 -in data/certbot/conf/live/zenzefi.melxiory.ru/fullchain.pem -noout -dates
+openssl x509 -in data/certbot/conf/live/melxiorylab.ru/fullchain.pem -noout -dates
 ```
 
 ## Архитектура сети
