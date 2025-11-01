@@ -207,8 +207,10 @@ marimo/_lsp/
 __marimo__/
 
 
-# Nginx folder
-nginx/
+# Nginx runtime data (but keep config)
+!nginx/
+!nginx/**/*.conf
+!nginx/**/*.conf.disabled
 /app_data/
 /TECHNICAL_DOCUMENTATION.md
 

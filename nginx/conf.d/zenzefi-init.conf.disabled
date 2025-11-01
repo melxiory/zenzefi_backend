@@ -1,0 +1,53 @@
+# Initial configuration without SSL (for Let's Encrypt certificate generation)
+# Rename this file to zenzefi-init.conf (remove .disabled) for initial setup
+# After obtaining SSL certificate, disable this file and use zenzefi.conf
+
+upstream backend_upstream {
+    server tailscale:8000 max_fails=3 fail_timeout=30s;
+}
+
+# HTTP Server - For initial setup and Let's Encrypt
+server {
+    listen 80;
+    server_name _;
+
+    # Allow Let's Encrypt ACME challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Proxy all other traffic to backend
+    location / {
+        proxy_pass http://backend_upstream;
+        proxy_http_version 1.1;
+
+        # Headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+
+        # Buffering
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+
+    # Health check endpoint
+    location = /health {
+        proxy_pass http://backend_upstream/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+}

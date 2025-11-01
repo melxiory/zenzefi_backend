@@ -15,7 +15,8 @@ services:
       - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_ACCEPT_DNS=true
-      - TS_EXTRA_ARGS=--advertise-tags=tag:zenzefi
+      # Remove tag if not configured in Tailscale ACL
+      # - TS_EXTRA_ARGS=--advertise-tags=tag:zenzefi
     volumes:
       - ./data/tailscale:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
@@ -84,6 +85,8 @@ services:
         condition: service_healthy
     # Share network namespace with Tailscale container
     # This allows backend to access Tailscale VPN network
+    # NOTE: Because backend uses tailscale's network namespace,
+    # nginx must connect to 'tailscale:8000' instead of 'backend:8000'
     network_mode: service:tailscale
     volumes:
       - ./logs:/app/logs
@@ -108,9 +111,15 @@ services:
       - ./data/certbot/conf:/etc/letsencrypt:ro
       - ./data/certbot/www:/var/www/certbot:ro
     depends_on:
-      - backend
+      tailscale:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
     networks:
       - zenzefi-network
+    # Use Docker's embedded DNS resolver
+    dns:
+      - 127.0.0.11
     healthcheck:
       test: ["CMD", "nginx", "-t"]
       interval: 30s

@@ -130,7 +130,40 @@ docker exec -it zenzefi-backend python scripts/create_superuser.py
 
 #### Шаг 5: Настройка Nginx и SSL
 
-См. [DEPLOYMENT_DOCKER.md](./DEPLOYMENT_DOCKER.md) для настройки Nginx и Let's Encrypt.
+**Важно:** При использовании Tailscale в Docker, Nginx должен подключаться к `tailscale:8000` вместо `backend:8000`.
+
+Полная инструкция по настройке Nginx с SSL: [NGINX_SSL_SETUP.md](../NGINX_SSL_SETUP.md)
+
+**Быстрый старт:**
+
+1. **Первоначальный запуск без SSL:**
+   ```bash
+   cd nginx/conf.d
+   mv zenzefi.conf zenzefi.conf.disabled
+   mv zenzefi-init.conf.disabled zenzefi-init.conf
+   docker-compose -f docker-compose.prod.tailscale.yml up -d
+   ```
+
+2. **Получить SSL сертификат:**
+   ```bash
+   docker-compose -f docker-compose.prod.tailscale.yml stop nginx
+   docker-compose -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
+     --standalone --email your-email@example.com --agree-tos \
+     -d zenzefi.melxiory.ru
+   ```
+
+3. **Переключиться на HTTPS:**
+   ```bash
+   cd nginx/conf.d
+   mv zenzefi-init.conf zenzefi-init.conf.disabled
+   mv zenzefi.conf.disabled zenzefi.conf
+   docker-compose -f docker-compose.prod.tailscale.yml restart nginx
+   ```
+
+4. **Проверить:**
+   ```bash
+   curl https://zenzefi.melxiory.ru/health
+   ```
 
 ---
 
@@ -301,17 +334,31 @@ docker inspect zenzefi-backend | grep -A 10 Health
 
 ### Nginx не может достучаться до Backend
 
-Если используете `network_mode: service:tailscale`, Nginx НЕ сможет подключиться к Backend через Docker network.
+**Проблема:** Если используете `network_mode: service:tailscale`, Nginx НЕ сможет подключиться к Backend через обычный Docker network (`backend:8000`).
 
-**Решение:** Backend должен быть в двух сетях одновременно. Используйте `docker-compose.prod.tailscale.yml` где:
-- Backend использует `network_mode: service:tailscale` для VPN доступа
-- Nginx подключается к Backend через expose порты или host network
+**Причина:** Backend использует сетевой namespace Tailscale контейнера (`network_mode: service:tailscale`), поэтому он не имеет собственного хоста в Docker сети.
 
-**Альтернативное решение:**
-```yaml
-# Использовать macvlan или создать отдельный veth интерфейс
-# для backend, который будет в обеих сетях одновременно
+**Решение:** Nginx должен подключаться к `tailscale:8000` вместо `backend:8000`.
+
+Конфигурация Nginx upstream должна быть:
+```nginx
+upstream backend_upstream {
+    # Backend использует network_mode: service:tailscale
+    # поэтому доступен через tailscale хост
+    server tailscale:8000 max_fails=3 fail_timeout=30s;
+}
 ```
+
+**Проверка:**
+```bash
+# Nginx должен видеть tailscale хост
+docker exec zenzefi-nginx nslookup tailscale
+
+# Backend доступен на порту 8000 через tailscale
+docker exec zenzefi-nginx wget -O- http://tailscale:8000/health
+```
+
+Подробнее см. [NGINX_SSL_SETUP.md](../NGINX_SSL_SETUP.md)
 
 ---
 
