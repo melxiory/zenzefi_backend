@@ -1,6 +1,36 @@
 version: '3.8'
 
+# Production deployment with Tailscale VPN support
+# This compose file includes Tailscale container for VPN connectivity to Zenzefi server
+
 services:
+  # Tailscale VPN Client
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: zenzefi-tailscale
+    restart: always
+    privileged: true
+    environment:
+      # Tailscale auth key - get from https://login.tailscale.com/admin/settings/keys
+      - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_ACCEPT_DNS=true
+      - TS_EXTRA_ARGS=--advertise-tags=tag:zenzefi
+    volumes:
+      - ./data/tailscale:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    networks:
+      - zenzefi-network
+    healthcheck:
+      test: ["CMD", "tailscale", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
@@ -50,8 +80,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - zenzefi-network
+      tailscale:
+        condition: service_healthy
+    # Share network namespace with Tailscale container
+    # This allows backend to access Tailscale VPN network
+    network_mode: service:tailscale
     volumes:
       - ./logs:/app/logs
     healthcheck:
@@ -100,3 +133,4 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  tailscale-data:
