@@ -240,13 +240,75 @@ mv nginx/conf.d/zenzefi-init.conf.disabled nginx/conf.d/zenzefi-init.conf
 
 print_success "Initial HTTP configuration enabled"
 
+# Pull Docker images with retry
+print_header "10. Pulling Docker Images"
+
+pull_image_with_retry() {
+    local image=$1
+    local max_attempts=3
+    local attempt=1
+
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Pulling $image (attempt $attempt/$max_attempts)..."
+        if docker pull $image; then
+            print_success "Successfully pulled $image"
+            return 0
+        else
+            print_warning "Failed to pull $image (attempt $attempt/$max_attempts)"
+            if [ $attempt -lt $max_attempts ]; then
+                print_info "Retrying in 10 seconds..."
+                sleep 10
+            fi
+            attempt=$((attempt + 1))
+        fi
+    done
+
+    print_error "Failed to pull $image after $max_attempts attempts"
+    return 1
+}
+
+# Pull all required images
+IMAGES=(
+    "postgres:15-alpine"
+    "redis:7-alpine"
+    "nginx:alpine"
+    "tailscale/tailscale:latest"
+    "certbot/certbot:latest"
+    "python:3.13-slim"
+)
+
+print_info "Pulling required Docker images..."
+PULL_FAILED=0
+
+for image in "${IMAGES[@]}"; do
+    if ! pull_image_with_retry "$image"; then
+        PULL_FAILED=1
+    fi
+done
+
+if [ $PULL_FAILED -eq 1 ]; then
+    print_error "Some images failed to download"
+    print_warning "This might be due to:"
+    echo "  - Slow or unstable internet connection"
+    echo "  - Docker Hub rate limiting"
+    echo "  - Firewall blocking Docker Hub"
+    echo ""
+    read -p "Do you want to continue anyway? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+print_success "Docker images pulled"
+
 # Build Docker images
-print_header "10. Building Docker Images"
+print_header "11. Building Custom Docker Images"
 docker compose -f docker-compose.prod.tailscale.yml build
 print_success "Docker images built"
 
 # Start containers (without Nginx first)
-print_header "11. Starting Core Services"
+print_header "12. Starting Core Services"
 docker compose -f docker-compose.prod.tailscale.yml up -d postgres redis tailscale backend
 
 print_info "Waiting for services to be healthy (30 seconds)..."
@@ -259,12 +321,12 @@ docker exec zenzefi-tailscale tailscale status || print_warning "Tailscale statu
 print_success "Core services started"
 
 # Apply database migrations
-print_header "12. Applying Database Migrations"
+print_header "13. Applying Database Migrations"
 docker exec zenzefi-backend alembic upgrade head
 print_success "Database migrations applied"
 
 # Start Nginx for SSL certificate
-print_header "13. Starting Nginx"
+print_header "14. Starting Nginx"
 docker compose -f docker-compose.prod.tailscale.yml up -d nginx
 
 print_info "Waiting for Nginx to start (10 seconds)..."
@@ -273,7 +335,7 @@ sleep 10
 print_success "Nginx started"
 
 # Obtain SSL certificate
-print_header "14. Obtaining SSL Certificate"
+print_header "15. Obtaining SSL Certificate"
 
 # Stop Nginx to use certbot standalone
 docker compose -f docker-compose.prod.tailscale.yml stop nginx
@@ -297,7 +359,7 @@ fi
 
 # Switch to HTTPS configuration if certificate exists
 if [ -f "data/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-    print_header "15. Enabling HTTPS Configuration"
+    print_header "16. Enabling HTTPS Configuration"
 
     # Switch configs
     mv nginx/conf.d/zenzefi-init.conf nginx/conf.d/zenzefi-init.conf.disabled
@@ -309,7 +371,7 @@ else
 fi
 
 # Restart all services
-print_header "16. Restarting All Services"
+print_header "17. Restarting All Services"
 docker compose -f docker-compose.prod.tailscale.yml restart
 sleep 10
 print_success "All services restarted"
@@ -319,7 +381,7 @@ docker compose -f docker-compose.prod.tailscale.yml up -d certbot
 print_success "Certbot auto-renewal configured"
 
 # Create backup script
-print_header "17. Creating Backup Script"
+print_header "18. Creating Backup Script"
 
 # Ensure scripts directory exists
 mkdir -p $INSTALL_DIR/scripts
@@ -355,7 +417,7 @@ chmod +x $INSTALL_DIR/scripts/backup.sh
 print_success "Backup script created and scheduled (daily at 3 AM)"
 
 # Final checks
-print_header "18. Final System Checks"
+print_header "19. Final System Checks"
 
 echo ""
 print_info "Container Status:"
