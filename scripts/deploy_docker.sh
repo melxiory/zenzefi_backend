@@ -167,6 +167,7 @@ print_header "6. Creating Data Directories"
 cd $INSTALL_DIR
 mkdir -p data/postgres data/redis data/tailscale data/certbot/conf data/certbot/www
 mkdir -p logs backups
+chmod 777 logs
 chmod 755 data/tailscale
 print_success "Data directories created"
 
@@ -302,14 +303,28 @@ fi
 
 print_success "Docker images pulled"
 
+# Check Docker Compose version
+print_header "11. Checking Docker Compose"
+if docker compose version > /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker compose"
+    print_success "Using Docker Compose V2 (docker compose)"
+elif docker-compose version > /dev/null 2>&1; then
+    DOCKER_COMPOSE="docker-compose"
+    print_warning "Using Docker Compose V1 (docker-compose)"
+    print_warning "Consider upgrading to Docker Compose V2 for better compatibility"
+else
+    print_error "Docker Compose not found"
+    exit 1
+fi
+
 # Build Docker images
-print_header "11. Building Custom Docker Images"
-docker compose -f docker-compose.prod.tailscale.yml build
+print_header "12. Building Custom Docker Images"
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml build --no-cache
 print_success "Docker images built"
 
 # Start containers (without Nginx first)
-print_header "12. Starting Core Services"
-docker compose -f docker-compose.prod.tailscale.yml up -d postgres redis tailscale backend
+print_header "13. Starting Core Services"
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml up -d postgres redis tailscale backend
 
 print_info "Waiting for services to be healthy (30 seconds)..."
 sleep 30
@@ -321,13 +336,13 @@ docker exec zenzefi-tailscale tailscale status || print_warning "Tailscale statu
 print_success "Core services started"
 
 # Apply database migrations
-print_header "13. Applying Database Migrations"
+print_header "14. Applying Database Migrations"
 docker exec zenzefi-backend alembic upgrade head
 print_success "Database migrations applied"
 
 # Start Nginx for SSL certificate
-print_header "14. Starting Nginx"
-docker compose -f docker-compose.prod.tailscale.yml up -d nginx
+print_header "15. Starting Nginx"
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml up -d nginx
 
 print_info "Waiting for Nginx to start (10 seconds)..."
 sleep 10
@@ -335,13 +350,13 @@ sleep 10
 print_success "Nginx started"
 
 # Obtain SSL certificate
-print_header "15. Obtaining SSL Certificate"
+print_header "16. Obtaining SSL Certificate"
 
 # Stop Nginx to use certbot standalone
-docker compose -f docker-compose.prod.tailscale.yml stop nginx
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml stop nginx
 
 print_info "Running certbot in standalone mode..."
-docker compose -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
     --standalone \
     --email $LETSENCRYPT_EMAIL \
     --agree-tos \
@@ -359,7 +374,7 @@ fi
 
 # Switch to HTTPS configuration if certificate exists
 if [ -f "data/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-    print_header "16. Enabling HTTPS Configuration"
+    print_header "17. Enabling HTTPS Configuration"
 
     # Switch configs
     mv nginx/conf.d/zenzefi-init.conf nginx/conf.d/zenzefi-init.conf.disabled
@@ -371,17 +386,17 @@ else
 fi
 
 # Restart all services
-print_header "17. Restarting All Services"
-docker compose -f docker-compose.prod.tailscale.yml restart
+print_header "18. Restarting All Services"
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml restart
 sleep 10
 print_success "All services restarted"
 
 # Start certbot for auto-renewal
-docker compose -f docker-compose.prod.tailscale.yml up -d certbot
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml up -d certbot
 print_success "Certbot auto-renewal configured"
 
 # Create backup script
-print_header "18. Creating Backup Script"
+print_header "19. Creating Backup Script"
 
 # Ensure scripts directory exists
 mkdir -p $INSTALL_DIR/scripts
@@ -417,11 +432,11 @@ chmod +x $INSTALL_DIR/scripts/backup.sh
 print_success "Backup script created and scheduled (daily at 3 AM)"
 
 # Final checks
-print_header "19. Final System Checks"
+print_header "20. Final System Checks"
 
 echo ""
 print_info "Container Status:"
-docker compose -f docker-compose.prod.tailscale.yml ps
+$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml ps
 echo ""
 
 print_info "Checking Tailscale VPN connection..."

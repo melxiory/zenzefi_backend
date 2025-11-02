@@ -87,6 +87,7 @@ services:
     # This allows backend to access Tailscale VPN network
     # NOTE: Because backend uses tailscale's network namespace,
     # nginx must connect to 'tailscale:8000' instead of 'backend:8000'
+    # IMPORTANT: network_mode: service:X is incompatible with networks: []
     network_mode: service:tailscale
     volumes:
       - ./logs:/app/logs
@@ -130,16 +131,14 @@ services:
   certbot:
     image: certbot/certbot
     container_name: zenzefi-certbot
+    restart: always
     volumes:
       - ./data/certbot/conf:/etc/letsencrypt
       - ./data/certbot/www:/var/www/certbot
+    networks:
+      - zenzefi-network
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
 networks:
   zenzefi-network:
     driver: bridge
-
-volumes:
-  postgres-data:
-  redis-data:
-  tailscale-data:
