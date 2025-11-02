@@ -15,6 +15,7 @@ services:
       - TS_AUTHKEY=${TAILSCALE_AUTH_KEY}
       - TS_STATE_DIR=/var/lib/tailscale
       - TS_ACCEPT_DNS=true
+      - TS_USERSPACE=false
       # Remove tag if not configured in Tailscale ACL
       # - TS_EXTRA_ARGS=--advertise-tags=tag:zenzefi
     volumes:
