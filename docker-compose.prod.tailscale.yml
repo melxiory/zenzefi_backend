@@ -138,7 +138,8 @@ services:
       - ./data/certbot/www:/var/www/certbot
     networks:
       - zenzefi-network
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    # Use command instead of entrypoint to allow 'docker compose run' to override
+    command: /bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'
 
 networks:
   zenzefi-network:
