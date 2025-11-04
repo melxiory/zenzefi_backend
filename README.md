@@ -399,9 +399,8 @@ sudo bash deploy.sh
 
 ### 📚 Документация
 
-- **[DEPLOYMENT_DOCKER.md](./DEPLOYMENT_DOCKER.md)** - 🐳 Docker deployment (рекомендуется)
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - 📦 Native installation
-- **[QUICKSTART.md](./QUICKSTART.md)** - Шпаргалка по основным командам
+- **[docs/DEPLOYMENT_TAILSCALE.md](./docs/DEPLOYMENT_TAILSCALE.md)** - 🐳 Docker deployment с Tailscale VPN (рекомендуется)
+- **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - 📦 Native installation
 - **[CLAUDE.md](./CLAUDE.md)** - Документация для разработки
 
 ### После установки

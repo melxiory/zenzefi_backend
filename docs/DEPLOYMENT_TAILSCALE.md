@@ -132,7 +132,10 @@ docker exec -it zenzefi-backend python scripts/create_superuser.py
 
 **Важно:** При использовании Tailscale в Docker, Nginx должен подключаться к `tailscale:8000` вместо `backend:8000`.
 
-Полная инструкция по настройке Nginx с SSL: [NGINX_SSL_SETUP.md](../NGINX_SSL_SETUP.md)
+**Для автоматизированной настройки SSL используйте:**
+```bash
+sudo bash scripts/fix_ssl.sh
+```
 
 **Быстрый старт:**
 
@@ -358,8 +361,6 @@ docker exec zenzefi-nginx nslookup tailscale
 docker exec zenzefi-nginx wget -O- http://tailscale:8000/health
 ```
 
-Подробнее см. [NGINX_SSL_SETUP.md](../NGINX_SSL_SETUP.md)
-
 ---
 
 ## Обновление и обслуживание
@@ -461,8 +462,8 @@ New-NetFirewallRule -DisplayName "Zenzefi - Tailscale" `
 - [Tailscale Documentation](https://tailscale.com/kb/)
 - [Tailscale Docker Guide](https://tailscale.com/kb/1282/docker/)
 - [Tailscale ACL Documentation](https://tailscale.com/kb/1018/acls/)
-- [DEPLOYMENT_DOCKER.md](./DEPLOYMENT_DOCKER.md) - Полное руководство по Docker деплою
 - [DEPLOYMENT.md](./DEPLOYMENT.md) - Нативная установка без Docker
+- [BACKEND.md](./BACKEND.md) - Детальная документация по архитектуре бэкенда
 
 ---
 

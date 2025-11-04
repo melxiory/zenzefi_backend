@@ -227,8 +227,7 @@ cp nginx/conf.d/zenzefi-init.conf.disabled nginx/conf.d/zenzefi-init.conf.disabl
 
 # Update domain in configs (replace placeholder _ with actual domain)
 sed -i "s/server_name _;/server_name $DOMAIN;/" nginx/conf.d/zenzefi.conf
-sed -i "s|ssl_certificate /etc/letsencrypt/live/melxiorylab.ru/|ssl_certificate /etc/letsencrypt/live/$DOMAIN/|g" nginx/conf.d/zenzefi.conf
-sed -i "s|ssl_certificate_key /etc/letsencrypt/live/melxiorylab.ru/|ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/|g" nginx/conf.d/zenzefi.conf
+sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" nginx/conf.d/zenzefi.conf
 
 print_success "Nginx configuration updated for $DOMAIN"
 
@@ -533,7 +532,7 @@ else
     echo ""
     print_warning "SSL certificate was not obtained. To set up HTTPS:"
     echo "   1. Ensure DNS is properly configured for $DOMAIN"
-    echo "   2. Follow instructions in NGINX_SSL_SETUP.md"
+    echo "   2. Run: sudo bash $INSTALL_DIR/scripts/fix_ssl.sh"
 fi
 
 echo ""
@@ -591,22 +590,16 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📖 Documentation:"
-echo "   - Quick Deploy Checklist: $INSTALL_DIR/QUICK_DEPLOY_CHECKLIST.md"
-echo "   - Nginx SSL Setup: $INSTALL_DIR/NGINX_SSL_SETUP.md"
+echo "   - Main README: $INSTALL_DIR/README.md"
+echo "   - Backend Documentation: $INSTALL_DIR/CLAUDE.md"
 echo "   - Tailscale Deployment: $INSTALL_DIR/docs/DEPLOYMENT_TAILSCALE.md"
 echo ""
 
 if [ ! -f "data/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
     print_warning "Next steps: Configure SSL certificate"
     echo ""
-    echo "   Option 1 (Automated):"
+    echo "   Automated SSL Fix:"
     echo "   sudo bash $INSTALL_DIR/scripts/fix_ssl.sh"
-    echo ""
-    echo "   Option 2 (Manual):"
-    echo "   Follow: $INSTALL_DIR/NGINX_SSL_SETUP.md"
-    echo ""
-    echo "   Troubleshooting:"
-    echo "   $INSTALL_DIR/HTTPS_TROUBLESHOOTING.md"
     echo ""
 fi
 

@@ -596,11 +596,8 @@ When changing API behavior:
 
 ### Additional Documentation
 
-- **[QUICKSTART.md](./docs/QUICKSTART.md)** - Quick reference for common commands
 - **[DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Native installation guide (PostgreSQL, Redis, Nginx)
-- **[DEPLOYMENT_DOCKER.md](./docs/DEPLOYMENT_DOCKER.md)** - Docker deployment guide (recommended)
-- **[INTEGRATION_PLAN.md](./docs/INTEGRATION_PLAN.md)** - Desktop client integration architecture
-- **[CHANGELOG.md](./docs/CHANGELOG.md)** - Project changelog
+- **[DEPLOYMENT_TAILSCALE.md](./docs/DEPLOYMENT_TAILSCALE.md)** - Docker deployment with Tailscale VPN (recommended)
 - **[BACKEND.md](./docs/BACKEND.md)** - Detailed backend architecture documentation
 
 ## MCP Servers
