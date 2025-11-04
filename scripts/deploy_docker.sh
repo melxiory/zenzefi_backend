@@ -352,23 +352,64 @@ print_success "Nginx started"
 # Obtain SSL certificate
 print_header "16. Obtaining SSL Certificate"
 
-# Stop Nginx to use certbot standalone
-$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml stop nginx
+print_info "Checking DNS resolution for $DOMAIN..."
+if nslookup $DOMAIN > /dev/null 2>&1 || dig $DOMAIN +short > /dev/null 2>&1; then
+    print_success "DNS resolves for $DOMAIN"
+else
+    print_warning "DNS does not resolve for $DOMAIN"
+    print_warning "SSL certificate generation may fail"
+    echo ""
+    read -p "Do you want to continue anyway? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_warning "Skipping SSL certificate generation"
+        print_info "You can obtain certificate later using: sudo bash scripts/fix_ssl.sh"
+        SKIP_SSL=true
+    fi
+fi
 
-print_info "Running certbot in standalone mode..."
-$DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
-    --standalone \
-    --email $LETSENCRYPT_EMAIL \
-    --agree-tos \
-    --no-eff-email \
-    -d $DOMAIN
+if [ "$SKIP_SSL" != true ]; then
+    # Try webroot method first (preferred - doesn't require stopping Nginx)
+    print_info "Attempting certificate generation with webroot method..."
+    if $DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
+        --webroot \
+        --webroot-path=/var/www/certbot \
+        --email $LETSENCRYPT_EMAIL \
+        --agree-tos \
+        --no-eff-email \
+        -d $DOMAIN; then
+        print_success "SSL certificate obtained successfully with webroot method"
+    else
+        print_warning "Webroot method failed, trying standalone method..."
+
+        # Stop Nginx for standalone mode
+        $DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml stop nginx
+
+        print_info "Running certbot in standalone mode..."
+        if $DOCKER_COMPOSE -f docker-compose.prod.tailscale.yml run --rm certbot certonly \
+            --standalone \
+            --email $LETSENCRYPT_EMAIL \
+            --agree-tos \
+            --no-eff-email \
+            -d $DOMAIN; then
+            print_success "SSL certificate obtained successfully with standalone method"
+        else
+            print_error "SSL certificate generation failed with both methods"
+        fi
+    fi
+fi
 
 # Check if certificate was obtained
 if [ -f "data/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
-    print_success "SSL certificate obtained successfully"
+    print_success "SSL certificate verified: data/certbot/conf/live/$DOMAIN/fullchain.pem"
+
+    # Show certificate info
+    CERT_EXPIRY=$(openssl x509 -enddate -noout -in "data/certbot/conf/live/$DOMAIN/fullchain.pem" | cut -d= -f2)
+    print_info "Certificate expires: $CERT_EXPIRY"
 else
-    print_error "SSL certificate generation failed"
-    print_warning "You can try obtaining it manually later"
+    print_error "SSL certificate not found"
+    print_warning "HTTPS will not be available"
+    print_info "To obtain certificate later, run: sudo bash scripts/fix_ssl.sh"
     print_info "Continuing with HTTP-only configuration..."
 fi
 
@@ -557,7 +598,15 @@ echo ""
 
 if [ ! -f "data/certbot/conf/live/$DOMAIN/fullchain.pem" ]; then
     print_warning "Next steps: Configure SSL certificate"
+    echo ""
+    echo "   Option 1 (Automated):"
+    echo "   sudo bash $INSTALL_DIR/scripts/fix_ssl.sh"
+    echo ""
+    echo "   Option 2 (Manual):"
     echo "   Follow: $INSTALL_DIR/NGINX_SSL_SETUP.md"
+    echo ""
+    echo "   Troubleshooting:"
+    echo "   $INSTALL_DIR/HTTPS_TROUBLESHOOTING.md"
     echo ""
 fi
 
