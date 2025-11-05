@@ -2,7 +2,7 @@
 Tests for app/services/token_service.py
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from unittest.mock import patch
 
@@ -173,11 +173,19 @@ class TestTokenServiceValidate:
         assert token.expires_at is not None  # Now expires_at is set
 
         # Activated time should be close to now
-        now = datetime.utcnow()
-        assert abs((now - token.activated_at).total_seconds()) < 10
+        now = datetime.now(timezone.utc)
+        # Convert naive datetime from DB to aware if needed
+        activated_at = token.activated_at
+        if activated_at.tzinfo is None:
+            activated_at = activated_at.replace(tzinfo=timezone.utc)
+        assert abs((now - activated_at).total_seconds()) < 10
 
         # Expiry should be 24 hours from activation
-        expected_expiry = token.activated_at + timedelta(hours=24)
+        # Convert naive activated_at to aware for comparison
+        activated_at_aware = token.activated_at
+        if activated_at_aware.tzinfo is None:
+            activated_at_aware = activated_at_aware.replace(tzinfo=timezone.utc)
+        expected_expiry = activated_at_aware + timedelta(hours=24)
         assert abs((token.expires_at - expected_expiry).total_seconds()) < 10
 
     def test_validate_invalid_token(self, test_db: Session):
@@ -202,7 +210,7 @@ class TestTokenServiceValidate:
         # Manually activate and expire the token in database
         # expires_at is now calculated, so we set activated_at far enough in the past
         # For 1-hour token: activated 2 hours ago = expired 1 hour ago
-        token.activated_at = datetime.utcnow() - timedelta(hours=2)
+        token.activated_at = datetime.now(timezone.utc) - timedelta(hours=2)
         test_db.commit()
 
         # Clear Redis cache so validation will check database
@@ -226,7 +234,7 @@ class TestTokenServiceValidate:
 
         # Revoke token in database
         token.is_active = False
-        token.revoked_at = datetime.utcnow()
+        token.revoked_at = datetime.now(timezone.utc)
         test_db.commit()
 
         # Clear Redis cache so validation will check database
@@ -296,7 +304,7 @@ class TestTokenServiceGetUserTokens:
 
         # Revoke one token
         revoked_token.is_active = False
-        revoked_token.revoked_at = datetime.utcnow()
+        revoked_token.revoked_at = datetime.now(timezone.utc)
         test_db.commit()
 
         # Get active tokens only

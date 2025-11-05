@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request, Response, Depends, Header, Cookie, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
@@ -53,7 +53,7 @@ async def authenticate_with_cookie(
     # For non-activated tokens, use duration_hours
     if token_data["is_activated"] and token_data["expires_at"]:
         expires_at = datetime.fromisoformat(token_data["expires_at"])
-        max_age = int((expires_at - datetime.utcnow()).total_seconds())
+        max_age = int((expires_at - datetime.now(timezone.utc)).total_seconds())
     else:
         # Token not yet activated - use full duration
         max_age = token_data["duration_hours"] * 3600
@@ -154,7 +154,7 @@ async def proxy_status(
     # Calculate time remaining only for activated tokens
     if token_data["is_activated"] and token_data["expires_at"]:
         expires_at = datetime.fromisoformat(token_data["expires_at"])
-        time_remaining = int((expires_at - datetime.utcnow()).total_seconds())
+        time_remaining = int((expires_at - datetime.now(timezone.utc)).total_seconds())
         response["time_remaining_seconds"] = max(0, time_remaining)
         response["status"] = "active"
     else:
@@ -295,7 +295,7 @@ async def proxy_to_zenzefi(
         # Calculate cookie max_age based on token expiration
         if token_data["is_activated"] and token_data["expires_at"]:
             expires_at = datetime.fromisoformat(token_data["expires_at"])
-            max_age = int((expires_at - datetime.utcnow()).total_seconds())
+            max_age = int((expires_at - datetime.now(timezone.utc)).total_seconds())
         else:
             # Token not yet activated - use full duration
             max_age = token_data["duration_hours"] * 3600

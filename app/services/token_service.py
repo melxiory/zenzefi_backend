@@ -1,7 +1,7 @@
 import secrets
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -48,7 +48,7 @@ class TokenService:
         # Generate random token (URL-safe, 48 bytes = 64 chars)
         token_string = secrets.token_urlsafe(48)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         # activated_at будет установлен при первом использовании токена
         # expires_at вычисляется динамически как activated_at + duration_hours
 
@@ -95,7 +95,7 @@ class TokenService:
         redis_data = TokenService._get_cached_token(token)
         if redis_data:
             expires_at = datetime.fromisoformat(redis_data["expires_at"])
-            if expires_at > datetime.utcnow():
+            if expires_at > datetime.now(timezone.utc):
                 redis_data["is_activated"] = True
                 return True, redis_data
             else:
@@ -117,8 +117,12 @@ class TokenService:
             # Check if already activated and expired
             # expires_at is now calculated from activated_at + duration_hours
             if db_token.activated_at:
-                expires_at = db_token.activated_at + timedelta(hours=db_token.duration_hours)
-                if expires_at <= datetime.utcnow():
+                # Ensure activated_at is timezone-aware for comparison
+                activated_at = db_token.activated_at
+                if activated_at.tzinfo is None:
+                    activated_at = activated_at.replace(tzinfo=timezone.utc)
+                expires_at = activated_at + timedelta(hours=db_token.duration_hours)
+                if expires_at <= datetime.now(timezone.utc):
                     return False, None
 
             # Return token data WITHOUT activation
@@ -155,7 +159,7 @@ class TokenService:
         redis_data = TokenService._get_cached_token(token)
         if redis_data:
             expires_at = datetime.fromisoformat(redis_data["expires_at"])
-            if expires_at > datetime.utcnow():
+            if expires_at > datetime.now(timezone.utc):
                 return True, redis_data
             else:
                 # Expired token in cache, remove it
@@ -178,13 +182,17 @@ class TokenService:
             # Проверяем, не истек ли уже активированный токен
             # expires_at теперь вычисляется динамически
             if db_token.activated_at:
-                expires_at = db_token.activated_at + timedelta(hours=db_token.duration_hours)
-                if expires_at <= datetime.utcnow():
+                # Ensure activated_at is timezone-aware for comparison
+                activated_at = db_token.activated_at
+                if activated_at.tzinfo is None:
+                    activated_at = activated_at.replace(tzinfo=timezone.utc)
+                expires_at = activated_at + timedelta(hours=db_token.duration_hours)
+                if expires_at <= datetime.now(timezone.utc):
                     return False, None
 
             # Активируем токен при первом использовании
             if not db_token.activated_at:
-                db_token.activated_at = datetime.utcnow()
+                db_token.activated_at = datetime.now(timezone.utc)
                 db.commit()
                 db.refresh(db_token)
 
@@ -227,7 +235,7 @@ class TokenService:
 
             # Получаем все токены и фильтруем в Python (expires_at теперь property)
             all_tokens = query.order_by(AccessToken.created_at.desc()).all()
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             return [
                 token for token in all_tokens
                 if token.activated_at is None or token.expires_at > now
@@ -256,7 +264,7 @@ class TokenService:
                 "duration_hours": token.duration_hours,
             }
 
-            ttl = int((expires_at - datetime.utcnow()).total_seconds())
+            ttl = int((expires_at - datetime.now(timezone.utc)).total_seconds())
             if ttl > 0:
                 redis.setex(key, ttl, json.dumps(data))
         except Exception as e:

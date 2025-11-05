@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
@@ -37,11 +37,15 @@ class AccessToken(Base):
         Calculate expiration time dynamically from activation time.
 
         Returns:
-            datetime if token is activated, None if not activated yet
+            timezone-aware datetime if token is activated, None if not activated yet
         """
         if self.activated_at is None:
             return None
-        return self.activated_at + timedelta(hours=self.duration_hours)
+        # Ensure activated_at is timezone-aware (convert naive to UTC if needed)
+        activated = self.activated_at
+        if activated.tzinfo is None:
+            activated = activated.replace(tzinfo=timezone.utc)
+        return activated + timedelta(hours=self.duration_hours)
 
     def __repr__(self):
         return f"<AccessToken {self.id} user={self.user_id} expires={self.expires_at}>"

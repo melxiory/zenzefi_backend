@@ -2,7 +2,7 @@
 Tests for app/core/security.py module
 """
 import pytest
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 
 from app.core.security import (
     verify_password,
@@ -105,8 +105,8 @@ class TestJWTTokens:
         assert "exp" in decoded
 
         # Expiration should be approximately 30 minutes from now
-        exp_time = datetime.utcfromtimestamp(decoded["exp"])
-        expected_exp = datetime.utcnow() + expires_delta
+        exp_time = datetime.fromtimestamp(decoded["exp"], tz=timezone.utc)
+        expected_exp = datetime.now(timezone.utc) + expires_delta
 
         # Allow 10 seconds tolerance
         assert abs((exp_time - expected_exp).total_seconds()) < 10
@@ -167,10 +167,10 @@ class TestJWTTokens:
 
         # Check iat claim
         assert "iat" in decoded
-        iat_time = datetime.utcfromtimestamp(decoded["iat"])
+        iat_time = datetime.fromtimestamp(decoded["iat"], tz=timezone.utc)
 
         # Should be close to current time
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         assert abs((now - iat_time).total_seconds()) < 10
 
     def test_token_preserves_custom_claims(self, test_settings):

@@ -6,7 +6,7 @@ Service for performing health checks on all system components.
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from time import time
 from typing import Optional
 
@@ -238,7 +238,7 @@ class HealthCheckService:
 
         # Create response
         response = HealthResponse(
-            status=status, timestamp=datetime.utcnow(), checks=checks, overall=overall
+            status=status, timestamp=datetime.now(timezone.utc), checks=checks, overall=overall
         )
 
         logger.info(

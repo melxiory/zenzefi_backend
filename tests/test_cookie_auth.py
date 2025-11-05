@@ -96,9 +96,13 @@ def test_proxy_with_cookie(authenticated_client: TestClient):
     response = authenticated_client.get("/api/v1/proxy/some/path")
 
     # Cookie should work - backend accepts it and proxies the request
-    # Response can be: 200 (success), 401 (Zenzefi rejects token), 502/504 (Zenzefi unavailable)
-    # We just verify the cookie was accepted by our backend (not 401 from our server)
-    assert response.status_code in [200, 401, 502, 504]
+    # Response can be:
+    #   200 (success),
+    #   401 (Zenzefi rejects token),
+    #   404 (path doesn't exist on Zenzefi),
+    #   502/504 (Zenzefi unavailable)
+    # We just verify the cookie was accepted by our backend (not 401 "Authentication required")
+    assert response.status_code in [200, 401, 404, 502, 504]
 
 
 def test_proxy_with_header_still_works(authenticated_client: TestClient):
@@ -117,9 +121,13 @@ def test_proxy_with_header_still_works(authenticated_client: TestClient):
     )
 
     # Header should work - backend accepts it and proxies the request
-    # Response can be: 200 (success), 401 (Zenzefi rejects token), 502/504 (Zenzefi unavailable)
-    # We just verify the header was accepted by our backend (not 401 from our server)
-    assert response.status_code in [200, 401, 502, 504]
+    # Response can be:
+    #   200 (success),
+    #   401 (Zenzefi rejects token),
+    #   404 (path doesn't exist on Zenzefi),
+    #   502/504 (Zenzefi unavailable)
+    # We just verify the header was accepted by our backend (not 401 "Authentication required")
+    assert response.status_code in [200, 401, 404, 502, 504]
 
 
 def test_proxy_without_auth_fails(client):
