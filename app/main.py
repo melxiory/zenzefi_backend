@@ -109,15 +109,19 @@ async def health_check():
 
     if cached_health:
         # Return only status and timestamp
-        return SimpleHealthResponse(
-            status=cached_health.status, timestamp=cached_health.timestamp
-        )
+        return {
+            "status": cached_health.status,
+            "timestamp": cached_health.timestamp
+        }
 
     # If no cached data, perform a fresh check
     logger.warning("No cached health status found, performing fresh check")
     health = await HealthCheckService.perform_and_cache_health_check()
 
-    return SimpleHealthResponse(status=health.status, timestamp=health.timestamp)
+    return {
+        "status": health.status,
+        "timestamp": health.timestamp
+    }
 
 
 # Detailed health check endpoint

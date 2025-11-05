@@ -9,22 +9,49 @@ class TestHealthEndpoint:
     """Tests for /health endpoint"""
 
     def test_health_check(self, client: TestClient):
-        """Test health check endpoint"""
+        """Test simple health check endpoint - returns minimal status"""
         response = client.get("/health")
 
         # Should return 200 OK
         assert response.status_code == 200
 
-        # Check response structure
+        # Check response structure (simple version with only status and timestamp)
         data = response.json()
         assert "status" in data
-        assert "service" in data
-        assert "version" in data
+        assert "timestamp" in data
 
-        # Check values
-        assert data["status"] == "healthy"
-        assert data["service"] == "Zenzefi Backend"
-        assert data["version"] == "1.0.0"
+        # Should NOT include detailed fields (checks, overall)
+        assert "checks" not in data
+        assert "overall" not in data
+
+        # Check status value
+        assert data["status"] in ["healthy", "degraded", "unhealthy"]
+
+    def test_health_check_detailed(self, client: TestClient):
+        """Test detailed health check endpoint - returns full status"""
+        response = client.get("/health/detailed")
+
+        # Should return 200 OK
+        assert response.status_code == 200
+
+        # Check response structure (detailed version with all fields)
+        data = response.json()
+        assert "status" in data
+        assert "timestamp" in data
+        assert "checks" in data
+        assert "overall" in data
+
+        # Check checks structure
+        assert "database" in data["checks"]
+        assert "redis" in data["checks"]
+        assert "zenzefi" in data["checks"]
+
+        # Check overall structure
+        assert "healthy_count" in data["overall"]
+        assert "total_count" in data["overall"]
+
+        # Check status value
+        assert data["status"] in ["healthy", "degraded", "unhealthy"]
 
 
 class TestRootEndpoint:
@@ -45,7 +72,7 @@ class TestRootEndpoint:
 
         # Check values
         assert "Welcome to Zenzefi Backend" in data["message"]
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "0.1.0"  # Current version
         assert data["docs"] == "/docs"
 
 
