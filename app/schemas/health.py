@@ -99,3 +99,19 @@ class HealthResponse(BaseModel):
                 "overall": {"healthy_count": 3, "total_count": 3},
             }
         }
+
+
+class SimpleHealthResponse(BaseModel):
+    """Simple health check response - minimal information"""
+
+    status: OverallStatus = Field(..., description="Overall system status")
+    timestamp: datetime = Field(..., description="Health check timestamp")
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "status": "healthy",
+                "timestamp": "2025-11-05T20:30:45Z",
+            }
+        }

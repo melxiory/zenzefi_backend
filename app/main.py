@@ -8,7 +8,7 @@ from app.core.redis import get_redis_client, close_redis_client
 from app.core.health_scheduler import start_health_scheduler, shutdown_health_scheduler
 from app.api.v1 import api_router
 from app.services.health_service import HealthCheckService
-from app.schemas.health import HealthResponse
+from app.schemas.health import HealthResponse, SimpleHealthResponse
 
 # Setup logging
 setup_logging()
@@ -86,14 +86,48 @@ async def shutdown_event():
     logger.info("Application shutdown complete")
 
 
-# Health check endpoint
-@app.get("/health", tags=["Health"], response_model=HealthResponse)
+# Health check endpoint - Simple version
+@app.get("/health", tags=["Health"], response_model=SimpleHealthResponse)
 async def health_check():
     """
-    Health check endpoint
+    Simple health check endpoint
 
-    Returns cached health status from periodic checks.
-    If no cached data available, performs a fresh check.
+    Returns minimal health status (status + timestamp only).
+    Lightweight endpoint for monitoring systems and load balancers.
+
+    The health status is updated every 50 seconds by a background scheduler.
+
+    Returns:
+        SimpleHealthResponse: Basic health status
+            - status: Overall system status (healthy/degraded/unhealthy)
+            - timestamp: Time of last health check
+
+    For detailed information, use GET /health/detailed
+    """
+    # Try to get cached health status from Redis
+    cached_health = HealthCheckService.get_health_from_redis()
+
+    if cached_health:
+        # Return only status and timestamp
+        return SimpleHealthResponse(
+            status=cached_health.status, timestamp=cached_health.timestamp
+        )
+
+    # If no cached data, perform a fresh check
+    logger.warning("No cached health status found, performing fresh check")
+    health = await HealthCheckService.perform_and_cache_health_check()
+
+    return SimpleHealthResponse(status=health.status, timestamp=health.timestamp)
+
+
+# Detailed health check endpoint
+@app.get("/health/detailed", tags=["Health"], response_model=HealthResponse)
+async def health_check_detailed():
+    """
+    Detailed health check endpoint
+
+    Returns comprehensive health status with all service details.
+    Use this endpoint for debugging and internal monitoring.
 
     The health status is updated every 50 seconds by a background scheduler.
 
@@ -102,6 +136,10 @@ async def health_check():
             - status: Overall system status (healthy/degraded/unhealthy)
             - timestamp: Time of last health check
             - checks: Individual service statuses (database, redis, zenzefi)
+                * status: up/down/unknown
+                * latency_ms: Response time in milliseconds
+                * error: Error message if service is down
+                * url: Service URL (for external services)
             - overall: Statistics (healthy_count, total_count)
     """
     # Try to get cached health status from Redis
