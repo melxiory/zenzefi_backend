@@ -5,7 +5,10 @@ from loguru import logger
 from app.config import settings
 from app.core.logging import setup_logging
 from app.core.redis import get_redis_client, close_redis_client
+from app.core.health_scheduler import start_health_scheduler, shutdown_health_scheduler
 from app.api.v1 import api_router
+from app.services.health_service import HealthCheckService
+from app.schemas.health import HealthResponse
 
 # Setup logging
 setup_logging()
@@ -53,6 +56,13 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
 
+    # Start health check scheduler
+    try:
+        start_health_scheduler()
+        logger.info("Health check scheduler started")
+    except Exception as e:
+        logger.error(f"Failed to start health check scheduler: {e}")
+
     logger.info("Application startup complete")
 
 
@@ -62,6 +72,13 @@ async def shutdown_event():
     """Run on application shutdown"""
     logger.info("Shutting down application")
 
+    # Shutdown health check scheduler
+    try:
+        shutdown_health_scheduler()
+        logger.info("Health check scheduler stopped")
+    except Exception as e:
+        logger.error(f"Failed to stop health check scheduler: {e}")
+
     # Close Redis connection
     close_redis_client()
     logger.info("Redis connection closed")
@@ -70,19 +87,34 @@ async def shutdown_event():
 
 
 # Health check endpoint
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], response_model=HealthResponse)
 async def health_check():
     """
     Health check endpoint
 
+    Returns cached health status from periodic checks.
+    If no cached data available, performs a fresh check.
+
+    The health status is updated every 50 seconds by a background scheduler.
+
     Returns:
-        Status of the application
+        HealthResponse: Detailed health status of all system components
+            - status: Overall system status (healthy/degraded/unhealthy)
+            - timestamp: Time of last health check
+            - checks: Individual service statuses (database, redis, zenzefi)
+            - overall: Statistics (healthy_count, total_count)
     """
-    return {
-        "status": "healthy",
-        "service": settings.PROJECT_NAME,
-        "version": settings.VERSION,
-    }
+    # Try to get cached health status from Redis
+    cached_health = HealthCheckService.get_health_from_redis()
+
+    if cached_health:
+        return cached_health
+
+    # If no cached data, perform a fresh check
+    logger.warning("No cached health status found, performing fresh check")
+    health = await HealthCheckService.perform_and_cache_health_check()
+
+    return health
 
 
 # Root endpoint

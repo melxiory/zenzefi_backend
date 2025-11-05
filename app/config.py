@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Application
     PROJECT_NAME: str = "Zenzefi Backend"
-    VERSION: str = "1.0.0"
+    VERSION: str = "0.1.0"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # Cookie Settings
     COOKIE_SECURE: bool = False  # Set to True in production (HTTPS only)
     COOKIE_SAMESITE: str = "lax"  # "strict", "lax", or "none" (none requires HTTPS)
+
+    # Health Check Settings
+    HEALTH_CHECK_INTERVAL: int = 50  # Health check interval in seconds (40-60s recommended)
+    HEALTH_CHECK_TIMEOUT: float = 10.0  # Timeout for each individual check in seconds
 
     # Token Pricing (ZNC credits) - для MVP будут бесплатными
     TOKEN_PRICE_1H: float = 0.0      # Бесплатно для MVP
