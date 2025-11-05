@@ -101,15 +101,15 @@ def main():
         print("=" * 60)
         print("Starting Zenzefi Backend development server...")
         print("=" * 60)
-        print("URL:    http://0.0.0.0:8000")
-        print("Docs:   http://0.0.0.0:8000/docs")
-        print("Health: http://0.0.0.0:8000/health")
+        print("URL:    http://127.0.0.1:8000")
+        print("Docs:   http://127.0.0.1:8000/docs")
+        print("Health: http://127.0.0.1:8000/health")
         print("=" * 60)
         print()
 
         uvicorn.run(
             "app.main:app",
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=8000,
             reload=True,
             log_level="info",
