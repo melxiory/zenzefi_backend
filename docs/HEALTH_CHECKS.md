@@ -21,13 +21,17 @@ Zenzefi Backend включает систему мониторинга сост�
          │  Redis Cache         │
          │  Key: "health:status"│
          │  TTL: 120 seconds    │
+         │  (Full HealthResponse)│
          └──────────────────────┘
                     │
-                    ▼
-┌─────────────────────────────────────────┐
-│  GET /health endpoint                   │
-│  Returns cached status (fast ~1ms)      │
-└─────────────────────────────────────────┘
+        ┌───────────┴───────────┐
+        ▼                       ▼
+┌──────────────────┐    ┌──────────────────────┐
+│  GET /health     │    │  GET /health/detailed│
+│  Minimal (61B)   │    │  Full (348B)         │
+│  status+timestamp│    │  All service details │
+│  ~1ms response   │    │  ~1ms response       │
+└──────────────────┘    └──────────────────────┘
 ```
 
 ## Components
@@ -57,15 +61,50 @@ APScheduler интеграция для периодических провер�
 Pydantic модели для типизации ответов:
 - `ServiceStatus` - статус отдельного сервиса (up/down/unknown)
 - `OverallStatus` - общий статус системы (healthy/degraded/unhealthy)
-- `HealthResponse` - полный ответ с детальной информацией
+- `HealthResponse` - полный ответ с детальной информацией (для `/health/detailed`)
+- `SimpleHealthResponse` - минимальный ответ (для `/health`)
 
-## API Endpoint
+## API Endpoints
 
 ### GET /health
 
-Возвращает актуальный статус здоровья системы.
+Возвращает **минимальный** статус здоровья системы (только status и timestamp).
 
-**Response:**
+**Назначение:** Быстрая проверка для мониторинговых систем, балансировщиков нагрузки и health probes.
+
+**Response (61 bytes):**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-11-05T12:15:24.273626"
+}
+```
+
+**Status Codes:**
+
+- `200 OK` - Health check executed successfully (check `status` field for actual health)
+
+**Status Field Values:**
+
+- `healthy` - All services are up (3/3)
+- `degraded` - Zenzefi is down, but DB + Redis are up (2/3) - non-critical
+- `unhealthy` - DB or Redis is down (critical services)
+
+**Performance:**
+- Response time: ~1ms (cached from Redis)
+- Response size: 61 bytes
+- No detailed service information (lightweight)
+
+---
+
+### GET /health/detailed
+
+Возвращает **полный** статус здоровья системы со всеми деталями по каждому сервису.
+
+**Назначение:** Детальная диагностика, debugging, внутренний мониторинг с метриками.
+
+**Response (348 bytes):**
 
 ```json
 {
@@ -100,13 +139,29 @@ Pydantic модели для типизации ответов:
 
 **Status Codes:**
 
-- `200 OK` - Health check executed successfully (check `status` field for actual health)
+- `200 OK` - Health check executed successfully
 
-**Status Field Values:**
+**Performance:**
+- Response time: ~1ms (cached from Redis)
+- Response size: 348 bytes
+- Includes latency metrics for each service
+- Includes error messages if service is down
 
-- `healthy` - All services are up (3/3)
-- `degraded` - Zenzefi is down, but DB + Redis are up (2/3) - non-critical
-- `unhealthy` - DB or Redis is down (critical services)
+---
+
+### When to Use Which Endpoint?
+
+| Use Case | Endpoint | Reason |
+|----------|----------|--------|
+| Kubernetes liveness/readiness probes | `/health` | Minimal overhead, fast response |
+| Load balancer health checks | `/health` | Lightweight, only needs status |
+| Monitoring dashboards (Prometheus, Grafana) | `/health/detailed` | Need metrics (latency, errors) |
+| Manual debugging/diagnostics | `/health/detailed` | Full visibility into each service |
+| High-frequency polling (>1 req/sec) | `/health` | Reduces network bandwidth |
+| CI/CD pipeline validation | `/health` | Fast, simple status check |
+| Alerting with detailed context | `/health/detailed` | Error messages for notifications |
+
+**Recommendation:** Use `/health` by default, switch to `/health/detailed` only when you need diagnostics or metrics.
 
 ## Configuration
 
@@ -123,14 +178,20 @@ HEALTH_CHECK_TIMEOUT=10.0  # Timeout for each check in seconds (default: 10.0)
 ### cURL
 
 ```bash
-# Basic health check
+# Minimal health check (recommended for monitoring)
 curl http://localhost:8000/health
 
-# Pretty-printed JSON
-curl -s http://localhost:8000/health | python -m json.tool
+# Detailed health check (for debugging)
+curl http://localhost:8000/health/detailed
 
-# Check only status field
+# Pretty-printed detailed JSON
+curl -s http://localhost:8000/health/detailed | python -m json.tool
+
+# Check only status field (minimal endpoint)
 curl -s http://localhost:8000/health | jq '.status'
+
+# Check database latency (detailed endpoint)
+curl -s http://localhost:8000/health/detailed | jq '.checks.database.latency_ms'
 ```
 
 ### Python (httpx)
@@ -138,19 +199,29 @@ curl -s http://localhost:8000/health | jq '.status'
 ```python
 import httpx
 
+# Minimal health check (fast, lightweight)
 response = httpx.get("http://localhost:8000/health")
 health = response.json()
 
 if health["status"] == "healthy":
-    print("All services are healthy!")
+    print("✓ All services are healthy!")
 elif health["status"] == "degraded":
-    print(f"Warning: {health['overall']['healthy_count']}/3 services are up")
+    print("⚠ Warning: System is degraded")
 else:
-    print("Critical: System is unhealthy!")
+    print("✗ Critical: System is unhealthy!")
+
+# Detailed health check (with diagnostics)
+response = httpx.get("http://localhost:8000/health/detailed")
+health = response.json()
+
+if health["status"] != "healthy":
+    print(f"Services up: {health['overall']['healthy_count']}/3")
     # Check individual service errors
     for service, check in health["checks"].items():
         if check["status"] != "up":
-            print(f"{service}: {check['error']}")
+            print(f"  {service}: {check['error']}")
+        else:
+            print(f"  {service}: OK (latency: {check['latency_ms']}ms)")
 ```
 
 ### Monitoring Integration
