@@ -284,7 +284,11 @@ MCP servers configured in `.mcp.json`:
 - Desktop Client sends `X-Local-Url` header so Backend knows to rewrite URLs for local proxy domain
 - ALL business logic (auth, caching, rewriting, WebSocket) is in Backend Server
 - Development primarily on Windows; commands may need adjustment for Linux/Mac
-- Timezone consistency: use `datetime.utcfromtimestamp()` in tests, `datetime.utcnow()` in code
+- **Timezone consistency (CRITICAL):**
+  - Always use `datetime.now(timezone.utc)` for timezone-aware datetimes (NOT `datetime.utcnow()`)
+  - When deserializing from Redis/ISO format: `datetime.fromisoformat()` may return timezone-naive datetime
+  - **ALWAYS check timezone before comparison:** `if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)`
+  - Tests JWT: use `datetime.utcfromtimestamp()` (not `fromtimestamp`)
 
 **When writing code:**
 - Follow existing patterns in codebase
