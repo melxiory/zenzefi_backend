@@ -53,6 +53,9 @@ async def authenticate_with_cookie(
     # For non-activated tokens, use duration_hours
     if token_data["is_activated"] and token_data["expires_at"]:
         expires_at = datetime.fromisoformat(token_data["expires_at"])
+        # Ensure timezone-aware comparison
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         max_age = int((expires_at - datetime.now(timezone.utc)).total_seconds())
     else:
         # Token not yet activated - use full duration
@@ -154,6 +157,9 @@ async def proxy_status(
     # Calculate time remaining only for activated tokens
     if token_data["is_activated"] and token_data["expires_at"]:
         expires_at = datetime.fromisoformat(token_data["expires_at"])
+        # Ensure timezone-aware comparison
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
         time_remaining = int((expires_at - datetime.now(timezone.utc)).total_seconds())
         response["time_remaining_seconds"] = max(0, time_remaining)
         response["status"] = "active"
@@ -295,6 +301,9 @@ async def proxy_to_zenzefi(
         # Calculate cookie max_age based on token expiration
         if token_data["is_activated"] and token_data["expires_at"]:
             expires_at = datetime.fromisoformat(token_data["expires_at"])
+            # Ensure timezone-aware comparison
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
             max_age = int((expires_at - datetime.now(timezone.utc)).total_seconds())
         else:
             # Token not yet activated - use full duration
