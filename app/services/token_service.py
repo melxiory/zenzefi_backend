@@ -95,6 +95,9 @@ class TokenService:
         redis_data = TokenService._get_cached_token(token)
         if redis_data:
             expires_at = datetime.fromisoformat(redis_data["expires_at"])
+            # Ensure timezone-aware comparison
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at > datetime.now(timezone.utc):
                 redis_data["is_activated"] = True
                 return True, redis_data
@@ -159,6 +162,9 @@ class TokenService:
         redis_data = TokenService._get_cached_token(token)
         if redis_data:
             expires_at = datetime.fromisoformat(redis_data["expires_at"])
+            # Ensure timezone-aware comparison
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at > datetime.now(timezone.utc):
                 return True, redis_data
             else:
