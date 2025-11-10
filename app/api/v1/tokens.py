@@ -24,8 +24,12 @@ def purchase_token(
     """
     Purchase (create) a new access token (MVP: бесплатно)
 
+    Token can have scope:
+    - "full": full access to all Zenzefi endpoints
+    - "certificates_only": access only to /certificates/* endpoints
+
     Args:
-        token_data: Token creation data (duration_hours)
+        token_data: Token creation data (duration_hours, scope)
         current_user: Current authenticated user
         db: Database session
 
@@ -33,11 +37,11 @@ def purchase_token(
         Created access token
 
     Raises:
-        HTTPException: If invalid duration
+        HTTPException: If invalid duration or scope
     """
     try:
         token = TokenService.generate_access_token(
-            str(current_user.id), token_data.duration_hours, db
+            str(current_user.id), token_data.duration_hours, token_data.scope, db
         )
         return token
     except ValueError as e:

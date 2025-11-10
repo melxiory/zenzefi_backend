@@ -17,7 +17,7 @@ class TokenService:
 
     @staticmethod
     def generate_access_token(
-        user_id: str, duration_hours: int, db: Session
+        user_id: str, duration_hours: int, scope: str, db: Session
     ) -> AccessToken:
         """
         Generate new access token for user (MVP: бесплатно)
@@ -25,6 +25,7 @@ class TokenService:
         Args:
             user_id: User UUID
             duration_hours: Token duration in hours (1, 12, 24, 168, 720)
+            scope: Access scope ("full" or "certificates_only")
             db: Database session
 
         Returns:
@@ -57,6 +58,7 @@ class TokenService:
             user_id=user_id,
             token=token_string,
             duration_hours=duration_hours,
+            scope=scope,
             created_at=now,
             activated_at=None,  # Будет установлен при первом использовании
             is_active=True,
@@ -134,6 +136,7 @@ class TokenService:
                 "token_id": str(db_token.id),
                 "expires_at": db_token.expires_at.isoformat() if db_token.expires_at else None,
                 "duration_hours": db_token.duration_hours,
+                "scope": db_token.scope,
                 "is_activated": db_token.activated_at is not None,
                 "activated_at": db_token.activated_at.isoformat() if db_token.activated_at else None,
             }
@@ -210,6 +213,7 @@ class TokenService:
                 "token_id": str(db_token.id),
                 "expires_at": db_token.expires_at.isoformat(),  # Uses @property
                 "duration_hours": db_token.duration_hours,
+                "scope": db_token.scope,
             }
 
             return True, token_data
@@ -268,6 +272,7 @@ class TokenService:
                 "token_id": str(token.id),
                 "expires_at": expires_at.isoformat(),
                 "duration_hours": token.duration_hours,
+                "scope": token.scope,
             }
 
             ttl = int((expires_at - datetime.now(timezone.utc)).total_seconds())

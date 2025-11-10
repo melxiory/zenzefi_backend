@@ -20,6 +20,12 @@ class AccessToken(Base):
         String, unique=True, nullable=False, index=True
     )  # Random string or JWT
     duration_hours = Column(Integer, nullable=False)  # 1, 12, 24, 168, 720
+    scope = Column(
+        String,
+        default="full",
+        nullable=False,
+        comment="Access scope: 'full' or 'certificates_only'"
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     activated_at = Column(DateTime, nullable=True)  # When first used (NULL = not activated)
     is_active = Column(Boolean, default=True, nullable=False)

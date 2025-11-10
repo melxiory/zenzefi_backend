@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from loguru import logger
 
 from fastapi import APIRouter, Request, Response, Depends, Header, Cookie, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.responses import RedirectResponse
@@ -6,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.database import get_db
+from app.core.permissions import validate_path_access
 from app.services.token_service import TokenService
 from app.services.proxy_service import ProxyService
 
@@ -213,6 +215,21 @@ async def websocket_proxy(
     user_id = token_data["user_id"]
     token_id = token_data["token_id"]
 
+    # ============ BLOCK WEBSOCKET FOR CERTIFICATES_ONLY ============
+    token_scope = token_data.get("scope", "full")
+
+    if token_scope == "certificates_only":
+        logger.warning(
+            f"WebSocket denied: scope='certificates_only' does not allow WebSocket "
+            f"user_id={user_id} token_id={token_id}"
+        )
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason="WebSocket not allowed for certificate-only tokens"
+        )
+        return
+    # ============ END WEBSOCKET BLOCKING ============
+
     # Proxy WebSocket to Zenzefi
     await ProxyService.proxy_websocket(
         websocket=websocket, path=path, user_id=user_id, token_id=token_id
@@ -361,6 +378,29 @@ async def proxy_to_zenzefi(
     # Extract user and token IDs
     user_id = token_data["user_id"]
     token_id = token_data["token_id"]
+
+    # ============ SCOPE-BASED PATH VALIDATION ============
+    token_scope = token_data.get("scope", "full")
+
+    # Validate path access based on token scope
+    if not validate_path_access(path, token_scope):
+        logger.warning(
+            f"Access denied: scope='{token_scope}' path='/{path}' "
+            f"user_id={user_id} token_id={token_id}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Access denied: your token scope ('{token_scope}') "
+                f"does not allow access to '/{path}'"
+            )
+        )
+
+    logger.info(
+        f"Access granted: scope='{token_scope}' path='/{path}' "
+        f"method={request.method} user_id={user_id}"
+    )
+    # ============ END SCOPE VALIDATION ============
 
     # Proxy request to Zenzefi
     response = await ProxyService.proxy_request(

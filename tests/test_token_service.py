@@ -36,7 +36,7 @@ class TestTokenServiceGenerate:
 
         # Generate token (Redis is mocked automatically)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Check token
@@ -68,7 +68,7 @@ class TestTokenServiceGenerate:
 
         for duration in valid_durations:
             token = TokenService.generate_access_token(
-                user_id=str(user.id), duration_hours=duration, db=test_db
+                user_id=str(user.id), duration_hours=duration, scope="full", db=test_db
             )
 
             assert token.duration_hours == duration
@@ -87,7 +87,7 @@ class TestTokenServiceGenerate:
         for duration in invalid_durations:
             with pytest.raises(ValueError, match="Invalid duration"):
                 TokenService.generate_access_token(
-                    user_id=str(user.id), duration_hours=duration, db=test_db
+                    user_id=str(user.id), duration_hours=duration, scope="full", db=test_db
                 )
 
     def test_generate_token_nonexistent_user(self, test_db: Session):
@@ -96,7 +96,7 @@ class TestTokenServiceGenerate:
 
         with pytest.raises(ValueError, match="User not found"):
             TokenService.generate_access_token(
-                user_id=fake_user_id, duration_hours=24, db=test_db
+                user_id=fake_user_id, duration_hours=24, scope="full", db=test_db
             )
 
     def test_generate_multiple_tokens_for_user(
@@ -109,10 +109,10 @@ class TestTokenServiceGenerate:
 
         # Generate multiple tokens
         token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
         token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, db=test_db
+            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Tokens should be different
@@ -129,7 +129,7 @@ class TestTokenServiceValidate:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Validate token
@@ -153,7 +153,7 @@ class TestTokenServiceValidate:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Token should not be activated yet
@@ -204,7 +204,7 @@ class TestTokenServiceValidate:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=1, db=test_db
+            user_id=str(user.id), duration_hours=1, scope="full", db=test_db
         )
 
         # Manually activate and expire the token in database
@@ -229,7 +229,7 @@ class TestTokenServiceValidate:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Revoke token in database
@@ -272,10 +272,10 @@ class TestTokenServiceGetUserTokens:
         user = AuthService.register_user(user_create, test_db)
 
         token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
         token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, db=test_db
+            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Get all tokens
@@ -296,10 +296,10 @@ class TestTokenServiceGetUserTokens:
         user = AuthService.register_user(user_create, test_db)
 
         active_token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
         revoked_token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, db=test_db
+            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Revoke one token
@@ -326,10 +326,10 @@ class TestTokenServiceGetUserTokens:
 
         # Create tokens with slight delay
         token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
         token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, db=test_db
+            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Get tokens

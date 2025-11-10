@@ -26,7 +26,7 @@ class TestProxyStatusEndpoint:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Verify token is not activated yet
@@ -70,7 +70,7 @@ class TestProxyStatusEndpoint:
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
         token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, db=test_db
+            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Activate token by validating it

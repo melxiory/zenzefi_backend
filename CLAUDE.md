@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between desktop clients and the target server, enabling monetization through token-based access control.
 
-**Current Status:** MVP Phase (Этап 1) - All core authentication, token generation, proxy functionality, and cookie-based authentication implemented and tested (85/85 tests passing, 85%+ code coverage).
+**Current Status:** v0.2.0-beta - Token scope system implemented for DTS Monaco access control. All core authentication, token generation, proxy functionality, cookie-based authentication, and scope-based access control implemented and tested (115/115 tests passing, 85%+ code coverage).
 
 ## Tech Stack
 
@@ -112,7 +112,8 @@ app/
 - Relationships: tokens (one-to-many with AccessToken, cascade delete)
 
 **AccessToken** (`app/models/token.py`):
-- Fields: id (UUID), user_id (FK), token (random string), duration_hours, activated_at, is_active, revoked_at
+- Fields: id (UUID), user_id (FK), token (random string), duration_hours, scope, activated_at, is_active, revoked_at
+- `scope` - Access scope: "full" (default) or "certificates_only" (added in v0.2.0)
 - `expires_at` - **computed property** (activated_at + duration_hours), NOT stored in DB
 - Valid durations: 1, 12, 24, 168 (week), 720 (month) hours
 
@@ -121,7 +122,13 @@ app/
 ```python
 # Active tokens (fast validation)
 Key: "active_token:{sha256(token)}"
-Value: {"user_id": "uuid", "token_id": "uuid", "expires_at": "ISO", "duration_hours": int}
+Value: {
+    "user_id": "uuid",
+    "token_id": "uuid",
+    "expires_at": "ISO",
+    "duration_hours": int,
+    "scope": "full|certificates_only"  # Added in v0.2.0
+}
 TTL: Until token expiration
 
 # Health check results
@@ -166,6 +173,124 @@ HEALTH_CHECK_TIMEOUT=10.0
 ### Tokens (`/api/v1/tokens`)
 - `POST /purchase` - Create access token (JWT auth required, MVP: free)
 - `GET /my-tokens?active_only=true` - List user's tokens
+
+## Token Scopes (Access Control)
+
+**Version:** 0.2.0-beta (Added 2025-11-10)
+
+Access tokens support **scope-based access control** to limit which endpoints can be accessed:
+
+### Scope Types
+
+| Scope | Access | Use Case |
+|-------|--------|----------|
+| `full` | All Zenzefi endpoints | Desktop Client, administrators |
+| `certificates_only` | Only `/certificates/*` paths | DTS Monaco, restricted applications |
+
+### Purchasing Scoped Tokens
+
+```bash
+# Full access token (default)
+POST /api/v1/tokens/purchase
+Authorization: Bearer {jwt_token}
+{
+  "duration_hours": 24,
+  "scope": "full"
+}
+
+# Certificates-only token
+POST /api/v1/tokens/purchase
+Authorization: Bearer {jwt_token}
+{
+  "duration_hours": 24,
+  "scope": "certificates_only"
+}
+```
+
+### Using Scoped Tokens
+
+```bash
+# ✅ Allowed with certificates_only scope
+GET /api/v1/proxy/certificates/filter
+X-Access-Token: {certificates_only_token}
+
+# ❌ Blocked with certificates_only scope (403 Forbidden)
+GET /api/v1/proxy/users/currentUser
+X-Access-Token: {certificates_only_token}
+```
+
+### Allowed Paths for `certificates_only`
+
+**Certificate Operations:**
+- `/certificates/filter` - List/search certificates
+- `/certificates/details/{id}` - Get certificate details
+- `/certificates/export/{id}` - Export certificate
+- `/certificates/import/*` - Import certificates
+- `/certificates/remove` - Remove certificates
+- `/certificates/restore` - Restore certificates
+
+**Certificate Testing:**
+- `/certificates/activeForTesting` - Active certificates for testing
+- `/certificates/activeForTesting/activate/{id}` - Activate certificate
+- `/certificates/activeForTesting/deactivate/{id}` - Deactivate certificate
+- `/certificates/activeForTesting/enhanced` - Enhanced testing info
+- `/certificates/activeForTesting/options/{id}` - Testing options
+- `/certificates/activeForTesting/usecases/{id}` - Use cases
+
+**Certificate Updates & Integrity:**
+- `/certificates/update/{id}` - Update certificate
+- `/certificates/update/cancel` - Cancel update
+- `/certificates/update/metrics` - Update metrics
+- `/certificates/checkSystemIntegrityReport` - System integrity report
+- `/certificates/checkSystemIntegrityLog` - System integrity log
+- `/certificates/checkSystemIntegrityLogExistance` - Check log existence
+
+**UI Configuration:**
+- `/configurations/certificatesColumnOrder` - Column order settings
+- `/configurations/certificatesColumnVisibility` - Column visibility settings
+
+### Implementation Details
+
+**Validation Location:** `app/core/permissions.py`
+- `validate_path_access(path, scope)` - Check if path allowed for scope
+- `SCOPE_PERMISSIONS` - Dictionary mapping scopes to allowed regex patterns
+
+**Enforcement Points:**
+- HTTP Proxy: `app/api/v1/proxy.py` - Validates before forwarding to Zenzefi
+- WebSocket: Blocked entirely for `certificates_only` scope
+- Validation happens **before** backend forwards request to Zenzefi
+
+**Redis Cache Structure (Updated):**
+```python
+Key: "active_token:{sha256(token)}"
+Value: {
+    "user_id": "uuid",
+    "token_id": "uuid",
+    "expires_at": "ISO",
+    "duration_hours": int,
+    "scope": "full|certificates_only"  # Added in v0.2.0
+}
+```
+
+**Adding New Allowed Paths:**
+
+Edit `app/core/permissions.py` → `SCOPE_PERMISSIONS["certificates_only"]`:
+```python
+SCOPE_PERMISSIONS = {
+    "certificates_only": [
+        r"^certificates/newEndpoint",  # Add new allowed path
+        # ... existing paths
+    ]
+}
+```
+
+### Desktop Client Compatibility
+
+**No changes required** - Desktop Client is scope-agnostic:
+- Desktop Client simply forwards tokens (cookie or header)
+- Scope validation happens entirely in Backend
+- Tokens with any scope work transparently through Desktop Client
+- Desktop Client does NOT create tokens (tokens created via Backend API)
 
 ### Health Check
 - `GET /health` - Simple health check (~1ms from Redis cache)
@@ -249,14 +374,18 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 85+ tests, 85%+ coverage
+**Test organization:** 115 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
 - `test_token_service.py` - Token generation, caching (14 tests)
 - `test_api_auth.py` - Auth API endpoints (13 tests)
 - `test_api_tokens.py` - Token purchase API (16 tests)
 - `test_cookie_auth.py` - Cookie authentication (11 tests)
-- `test_main.py` - Health checks, CORS, routing (8 tests)
+- `test_permissions.py` - Token scope validation (8 tests)
+- `test_token_scopes.py` - Scope integration tests (7 tests)
+- `test_proxy_status.py` - Proxy status endpoint (4 tests)
+- `test_health_service.py` - Health check service (15 tests)
+- `test_main.py` - Health checks, CORS, routing (9 tests)
 
 **See [TESTING.md](./docs/claude/TESTING.md) for detailed testing guide.**
 

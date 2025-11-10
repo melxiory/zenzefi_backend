@@ -1,14 +1,27 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TokenCreate(BaseModel):
     """Schema for creating a new access token"""
 
     duration_hours: int = Field(..., ge=1, description="Duration in hours: 1, 12, 24, 168, 720")
+    scope: Literal["full", "certificates_only"] = Field(
+        default="full",
+        description="Access scope: 'full' for all paths, 'certificates_only' for certificates only"
+    )
+
+    @field_validator('scope')
+    @classmethod
+    def validate_scope(cls, v: str) -> str:
+        """Validate scope value"""
+        allowed_scopes = ["full", "certificates_only"]
+        if v not in allowed_scopes:
+            raise ValueError(f"scope must be one of {allowed_scopes}")
+        return v
 
 
 class TokenValidate(BaseModel):
@@ -23,6 +36,7 @@ class TokenResponse(BaseModel):
     token_id: UUID = Field(..., alias="id")
     token: str
     duration_hours: int
+    scope: str = Field(default="full", description="Access scope")
     created_at: datetime
     expires_at: Optional[datetime] = None  # NULL until token is activated
     activated_at: Optional[datetime] = None
