@@ -13,9 +13,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between desktop clients and the target server, enabling monetization through token-based access control.
+**Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between applications (like DTS Monaco) and the target server, enabling monetization through token-based access control.
 
-**Current Status:** v0.2.0-beta - Token scope system implemented for DTS Monaco access control. All core authentication, token generation, proxy functionality, cookie-based authentication, and scope-based access control implemented and tested (115/115 tests passing, 85%+ code coverage).
+**Current Status:** v0.3.0-beta - Simplified header-only authentication for DTS Monaco integration. All core authentication, token generation, proxy functionality, and scope-based access control implemented and tested (104/104 tests passing, 85%+ code coverage).
 
 ## Tech Stack
 
@@ -51,22 +51,21 @@ poetry run alembic revision --autogenerate -m "Description"
 
 ### Request Flow
 
-**Full Architecture (Desktop Client + Browser):**
+**Simplified Architecture (DTS Monaco Integration):**
 ```
-[Browser] → [Local Proxy (HTTPS)] → [FastAPI Backend] → [Zenzefi Server]
-   Cookie         SSL Termination      Cookie Validation     X-Access-Token
-                                       Token Validation
-                                             ↓
-                                      [PostgreSQL] + [Redis Cache]
+[Application] → [FastAPI Backend] → [Zenzefi Server]
+(DTS Monaco)    X-Access-Token      Token Validation
+                Header Auth                ↓
+                                    [PostgreSQL] + [Redis Cache]
 ```
 
 **Two Token Types:**
 1. **JWT Tokens** - For API authentication (register, login, purchase tokens)
 2. **Access Tokens** - For proxy access to Zenzefi server (64-char random strings)
 
-**Two Authentication Methods:**
-1. **JWT Authentication** - For API endpoints (`Authorization: Bearer token`)
-2. **Cookie Authentication** - For desktop client browser access (`zenzefi_access_token` cookie)
+**Authentication Method:**
+- **X-Access-Token Header** - For all proxy requests to Zenzefi server
+- **JWT Authentication** - For API endpoints (`Authorization: Bearer token`)
 
 ### Layer Architecture
 
@@ -95,9 +94,9 @@ app/
 - JWT expires in 60 minutes (configurable)
 
 **ProxyService** (`app/services/proxy_service.py`):
-- HTTP and WebSocket proxying to Zenzefi server
-- Content rewriting via JavaScript injection
-- Note: Desktop Client does NOT have ContentRewriter - this is ONLY in Backend
+- HTTP proxying to Zenzefi server (simplified, no WebSocket support)
+- Direct pass-through of requests and responses
+- CORS headers for API compatibility
 
 **HealthCheckService** (`app/services/health_service.py`):
 - Checks PostgreSQL, Redis, and Zenzefi server
@@ -158,8 +157,6 @@ BACKEND_URL=http://localhost:8000
 ```bash
 DEBUG=False
 ACCESS_TOKEN_EXPIRE_MINUTES=60
-COOKIE_SECURE=False  # True in production
-COOKIE_SAMESITE=lax  # "none" in production with HTTPS
 HEALTH_CHECK_INTERVAL=50
 HEALTH_CHECK_TIMEOUT=10.0
 ```
@@ -284,47 +281,17 @@ SCOPE_PERMISSIONS = {
 }
 ```
 
-### Desktop Client Compatibility
-
-**No changes required** - Desktop Client is scope-agnostic:
-- Desktop Client simply forwards tokens (cookie or header)
-- Scope validation happens entirely in Backend
-- Tokens with any scope work transparently through Desktop Client
-- Desktop Client does NOT create tokens (tokens created via Backend API)
-
 ### Health Check
 - `GET /health` - Simple health check (~1ms from Redis cache)
 - `GET /health/detailed` - Detailed health with latency measurements
 
 ### Proxy (`/api/v1/proxy`)
-- `POST /authenticate` - Set authentication cookie
-- `GET /status` - Check authentication status
-- `DELETE /logout` - Delete authentication cookie
-- `ALL /{path:path}` - Proxy HTTP request to Zenzefi
-- `WS /{path:path}` - Proxy WebSocket connection
+- `GET /status` - Check authentication status (requires `X-Access-Token` header)
+- `ALL /{path:path}` - Proxy HTTP request to Zenzefi (requires `X-Access-Token` header)
 
 **Full API docs:** http://localhost:8000/docs (when running)
 
 ## Critical Implementation Details
-
-### Cookie Authentication
-
-**Cookie Path (CRITICAL):**
-- Cookie `path` **MUST** be `"/"` (not `"/api/v1/proxy"`)
-- Browser only sends cookies if request path matches cookie path
-- Setting `path="/api/v1/proxy"` causes cookie not to be sent for `/` or other paths
-
-**Cookie Settings:**
-- Development (HTTP): `COOKIE_SECURE=False`, `COOKIE_SAMESITE="lax"`
-- Production (HTTPS): `COOKIE_SECURE=True`, `COOKIE_SAMESITE="none"`
-- `httponly=True` - Always enabled (XSS protection)
-- Lifetime (`max_age`) - Matches token expiration
-
-**Desktop Client Integration:**
-- Desktop Client is a **simplified forwarding proxy** (no content rewriting, caching, or auth validation)
-- Local proxy (`https://127.0.0.1:61000`) handles SSL termination only
-- ALL business logic is in Backend Server
-- Desktop Client forwards cookies and sends `X-Local-Url` header for proper URL rewriting
 
 ### Token Lifecycle
 
@@ -374,13 +341,12 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 115 tests, 85%+ coverage
+**Test organization:** 104 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
 - `test_token_service.py` - Token generation, caching (14 tests)
 - `test_api_auth.py` - Auth API endpoints (13 tests)
 - `test_api_tokens.py` - Token purchase API (16 tests)
-- `test_cookie_auth.py` - Cookie authentication (11 tests)
 - `test_permissions.py` - Token scope validation (8 tests)
 - `test_token_scopes.py` - Scope integration tests (7 tests)
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
@@ -400,18 +366,14 @@ MCP servers configured in `.mcp.json`:
 ## Notes for Claude Code
 
 **Critical Information:**
-- All tests must pass before considering work complete
+- All tests must pass before considering work complete (104 tests)
 - Use real Redis and PostgreSQL for integration testing (configured in `conftest.py`)
 - Token validation uses two-tier caching: Redis (fast) → PostgreSQL (fallback)
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens
 - `expires_at` is a computed property, NOT a database column
 - JWT payload structure: `{"sub": user_id, "username": username}` (NOT email)
-- Cookie `path` MUST be `"/"` (not `/api/v1/proxy`) for browser compatibility
-- `COOKIE_SECURE=False` in development (HTTP), `True` in production (HTTPS)
-- Desktop Client is a **simplified forwarding proxy** - does NOT do content rewriting, caching, or auth validation
-- Desktop Client forwards ALL requests to Backend Server (127.0.0.1:8000)
-- Desktop Client sends `X-Local-Url` header so Backend knows to rewrite URLs for local proxy domain
-- ALL business logic (auth, caching, rewriting, WebSocket) is in Backend Server
+- **X-Access-Token header** - ONLY authentication method for proxy endpoints
+- ProxyService is simplified: no WebSocket support, no HTML rewriting, no cookie handling
 - Development primarily on Windows; commands may need adjustment for Linux/Mac
 - **Timezone consistency (CRITICAL):**
   - Always use `datetime.now(timezone.utc)` for timezone-aware datetimes (NOT `datetime.utcnow()`)
