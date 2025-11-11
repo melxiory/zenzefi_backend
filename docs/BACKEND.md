@@ -1226,93 +1226,83 @@ volumes:
   postgres_dev_data:
   redis_dev_data:
 
-Этапы реализации
-Этап 1: MVP (Minimum Viable Product) ✅ ПРИОРИТЕТ
+## Этапы разработки
 
-Цель: Создать минимальную работающую систему для тестирования концепции
+Проект разбит на несколько логических этапов для управления разработкой. Подробное описание каждого этапа вынесено в отдельные документы.
 
-Задачи:
+**📋 См. полный обзор всех этапов:** [docs/phases/README.md](./phases/README.md)
 
-    ✅ Инициализация проекта
-        Создать структуру папок
-        Настроить Poetry (pyproject.toml)
-        Настроить Docker Compose для dev
-    ✅ База данных
-        Создать модели SQLAlchemy (User, AccessToken)
-        Настроить Alembic
-        Создать первые миграции
-    ✅ Аутентификация
-        Реализовать JWT токены
-        POST /auth/register
-        POST /auth/login
-        GET /users/me
-    ✅ Система токенов
-        POST /tokens/purchase (без оплаты, бесплатная генерация)
-        POST /tokens/validate
-        GET /tokens/my-tokens
-    ✅ Проксирование
-        ALL /proxy/{path:path} с валидацией токена
-        GET /proxy/status
+---
 
-Время: 2-3 дня
-Этап 2: Система валюты
+### Текущий статус: v0.3.0-beta
 
-Цель: Реализовать внутреннюю валюту и монетизацию
+**Завершено:**
+- ✅ **[Этап 1: MVP](./phases/PHASE_1_MVP.md)** - Базовая аутентификация, токены, HTTP проксирование (104/104 теста)
 
-Задачи:
+**В разработке:**
+- ⏳ **[Этап 2: Валюта](./phases/PHASE_2_CURRENCY.md)** - Внутренняя валюта ZNC, payment gateway
+- ⏳ **[Этап 3: Мониторинг](./phases/PHASE_3_MONITORING.md)** - ProxySession tracking, admin endpoints (частично)
+- ⏳ **[Этап 4: Production](./phases/PHASE_4_PRODUCTION.md)** - Rate limiting, CI/CD, load testing (частично)
 
-    Модели данных
-        Создать Transaction model
-        Добавить currency_balance в User
-    Currency endpoints
-        GET /currency/balance
-        POST /currency/purchase (заглушка)
-        GET /currency/transactions
-    Интеграция с токенами
-        Списание баланса при покупке токена
-        Проверка достаточности средств
-    Refund система
-        DELETE /tokens/{token_id} с возвратом
+**Будущие фичи:**
+- 💡 **[Future Features](./phases/PHASE_FUTURE.md)** - Token bundles, referrals, analytics, notifications
 
-Время: 1-2 дня
-Этап 3: Мониторинг
+**Общее время разработки:** 25-36 дней (основные этапы 1-4)
 
-Цель: Добавить инструменты для мониторинга и управления
+---
 
-Задачи:
+### Краткий обзор Этапа 1 (MVP) ✅ ЗАВЕРШЁН
 
-    ProxySession model
-        Трекинг активных сессий
-        Логирование активности
-    Admin endpoints
-        GET /admin/users
-        GET /admin/tokens
-        PATCH /admin/users/{id}
-    Метрики
-        Health check endpoint
-        Prometheus metrics
+**Версия:** v0.3.0-beta | **Тесты:** 104/104 | **Покрытие:** 85%+
 
-Время: 2 дня
-Этап 4: Production
+**Что реализовано:**
 
-Цель: Подготовить к production
+- ✅ Регистрация и аутентификация (JWT tokens)
+- ✅ Генерация и валидация access tokens (64-char random strings)
+- ✅ HTTP проксирование к Zenzefi server (упрощённое, без WebSocket/cookies)
+- ✅ Двухуровневое кеширование токенов (Redis ~1ms → PostgreSQL ~10ms)
+- ✅ Scope-based access control (full / certificates_only)
+- ✅ Health check system (GET /health, background scheduler)
+- ✅ Timezone-aware datetimes везде
+- ✅ Comprehensive testing (104 теста, 85%+ покрытие)
+- ✅ Docker deployment, 4 MCP servers, 12+ utility scripts
+- ✅ Полная документация (CLAUDE.md, docs/claude/)
 
-Задачи:
+**📖 Подробности:** [docs/phases/PHASE_1_MVP.md](./phases/PHASE_1_MVP.md)
 
-    Security
-        Nginx с SSL (Let's Encrypt)
-        Rate limiting
-        CORS configuration
-    Инфраструктура
-        Production Docker Compose
-        CI/CD pipeline
-        Backup стратегия
-    Документация
-        OpenAPI/Swagger
-        Deployment guide
-        API examples
+**Следующий этап:** [Этап 2 - Система валюты](./phases/PHASE_2_CURRENCY.md)
 
-Время: 3-4 дня
+---
+
+## Архитектурные решения
+
+**📋 Полное описание:** [docs/ADR.md](./ADR.md) (Architecture Decision Records)
+
+1. **Computed `expires_at`** - @property вместо DB column (устраняет data duplication)
+2. **Lazy Token Activation** - токен активируется при первом использовании  
+3. **Scope-Based Access Control** - ограничение доступа по paths (full / certificates_only)
+4. **Упрощённое проксирование** - только HTTP, без WebSocket/cookies/ContentRewriter
+5. **Two-Tier Token Validation** - Redis (~1ms) → PostgreSQL (~10ms)
+6. **Timezone-Aware Datetimes** - `datetime.now(timezone.utc)` везде
+
+**Подробности:** См. [docs/phases/PHASE_1_MVP.md](./phases/PHASE_1_MVP.md) и [docs/ADR.md](./ADR.md)
+
+---
+
+## Следующие этапы
+
+Следующие этапы разработки описаны в отдельных документах:
+
+- **[Этап 2: Валюта](./phases/PHASE_2_CURRENCY.md)** - Внутренняя валюта ZNC, payment gateway, refund system
+- **[Этап 3: Мониторинг](./phases/PHASE_3_MONITORING.md)** - ProxySession tracking, admin endpoints, audit logging  
+- **[Этап 4: Production](./phases/PHASE_4_PRODUCTION.md)** - Rate limiting, CI/CD, backups, load testing
+- **[Future Features](./phases/PHASE_FUTURE.md)** - Token bundles, referrals, analytics, notifications
+
+**📋 Полный обзор всех этапов:** [docs/phases/README.md](./phases/README.md)
+
+---
+
+
 Команды разработки
 bash
 

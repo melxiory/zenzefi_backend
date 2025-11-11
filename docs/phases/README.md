@@ -1,0 +1,315 @@
+# Этапы разработки Zenzefi Backend
+
+Этот директория содержит подробное описание всех этапов разработки backend системы Zenzefi Proxy Platform.
+
+---
+
+## 📋 Обзор этапов
+
+| Этап | Статус | Время | Описание |
+|------|--------|-------|----------|
+| [Этап 1: MVP](./PHASE_1_MVP.md) | ✅ **ЗАВЕРШЁН** | 2-3 недели | Базовая аутентификация, токены, HTTP проксирование |
+| [Этап 2: Валюта](./PHASE_2_CURRENCY.md) | ⏳ Не начат | 5-7 дней | Внутренняя валюта ZNC, payment gateway, refund system |
+| [Этап 3: Мониторинг](./PHASE_3_MONITORING.md) | ⏳ Частично | 3-5 дней | ProxySession tracking, admin endpoints, audit logging |
+| [Этап 4: Production](./PHASE_4_PRODUCTION.md) | ⏳ Частично | 4-6 дней | Rate limiting, CI/CD, backups, load testing |
+| [Future Features](./PHASE_FUTURE.md) | 💡 Идеи | 10-15 дней | Token bundles, referrals, analytics, notifications |
+
+**Общее время разработки:** 25-36 дней (основные этапы 1-4)
+
+---
+
+## Этап 1: MVP ✅ ЗАВЕРШЁН
+
+**Версия:** v0.3.0-beta
+**Тесты:** 104/104 (100% прохождение, 85%+ покрытие)
+
+### Что реализовано
+
+**Базовая функциональность:**
+- ✅ Регистрация и аутентификация (JWT tokens)
+- ✅ Генерация и валидация access tokens (64-char random strings)
+- ✅ HTTP проксирование к Zenzefi server
+- ✅ Двухуровневое кеширование токенов (Redis + PostgreSQL)
+- ✅ Scope-based access control (full / certificates_only)
+
+**База данных:**
+- ✅ User model (email, username, password, balance)
+- ✅ AccessToken model (token, duration, scope, lazy activation)
+- ✅ 4 миграции Alembic
+
+**Сервисы:**
+- ✅ AuthService - registration, login, JWT creation
+- ✅ TokenService - token generation, two-tier validation, caching
+- ✅ ProxyService - simplified HTTP proxying (no WebSocket)
+- ✅ HealthCheckService - PostgreSQL, Redis, Zenzefi checks
+
+**Инфраструктура:**
+- ✅ Docker Compose (dev + production)
+- ✅ Health checks (/health, /health/detailed)
+- ✅ Background scheduler (APScheduler)
+- ✅ 4 MCP servers (backend API, Redis, Docker, Postgres)
+
+**Документация:**
+- ✅ CLAUDE.md (backend-specific guide)
+- ✅ docs/claude/ (DEVELOPMENT, TESTING, TROUBLESHOOTING)
+- ✅ docs/DEPLOYMENT_TAILSCALE.md
+
+### Архитектурные решения
+
+1. **Computed expires_at** - вычисляемое свойство вместо БД колонки
+2. **Lazy Token Activation** - токен активируется при первом использовании
+3. **Scope-Based Access Control** - ограничение доступа по paths
+4. **Упрощённое проксирование** - только HTTP, без WebSocket/cookies
+5. **Two-Tier Token Validation** - Redis (~1ms) → PostgreSQL (~10ms)
+6. **Timezone-Aware Datetimes** - использование `datetime.now(timezone.utc)` везде
+
+**См. подробности:** [PHASE_1_MVP.md](./PHASE_1_MVP.md)
+
+---
+
+## Этап 2: Система валюты ⏳ НЕ НАЧАТ
+
+**Зависимости:** Этап 1 ✅ завершён
+**Время:** 5-7 дней
+
+### Цель
+
+Реализовать монетизацию через внутреннюю валюту **ZNC (Zenzefi Credits)** с покупкой токенов за баланс, интеграцией payment gateway и системой возвратов.
+
+### Основные задачи
+
+**1. Database Models** (1 день)
+- Transaction model (deposit, purchase, refund)
+- User.currency_balance field
+- Миграции
+
+**2. Pricing Configuration** (1 день)
+- Settings pricing (TOKEN_PRICE_1H, TOKEN_PRICE_24H, etc.)
+- get_token_price() method
+
+**3. Currency API** (1-2 дня)
+- GET /api/v1/currency/balance
+- GET /api/v1/currency/transactions
+- POST /api/v1/currency/purchase (payment gateway)
+
+**4. Token Purchase Logic** (1 день)
+- Обновить TokenService.generate_access_token()
+- Списание баланса с проверкой (with_for_update())
+- Создание transaction записи
+- 402 error при недостаточном балансе
+
+**5. Refund System** (1 день)
+- TokenService.revoke_token() с возвратом
+- Пропорциональный возврат за неиспользованное время
+- DELETE /api/v1/tokens/{id} endpoint
+
+**6. Payment Gateway Integration** (2-3 дня)
+- YooKassa/Stripe integration
+- Webhook handler для подтверждения платежа
+- HMAC signature verification
+
+**См. подробности:** [PHASE_2_CURRENCY.md](./PHASE_2_CURRENCY.md)
+
+---
+
+## Этап 3: Мониторинг ⏳ ЧАСТИЧНО РЕАЛИЗОВАНО
+
+**Зависимости:** Этап 2 должен быть завершён
+**Время:** 3-5 дней
+
+### Цель
+
+Добавить инструменты для мониторинга активности, управления пользователями и audit logging.
+
+### Что уже реализовано (из Этапа 1)
+
+- ✅ Health Check System (GET /health, GET /health/detailed)
+- ✅ Background scheduler (APScheduler, 50s interval)
+- ✅ Redis кеширование результатов (TTL: 120s)
+
+### Основные задачи
+
+**1. ProxySession Tracking** (1-2 дня)
+- ProxySession model (IP, user_agent, bytes_transferred, request_count)
+- Middleware для автоматического трекинга
+- Background cleanup (закрытие неактивных сессий > 1 час)
+
+**2. Admin Endpoints** (1 день)
+- GET /api/v1/admin/users (list, search, filter)
+- GET /api/v1/admin/tokens (list by user, active only)
+- PATCH /api/v1/admin/users/{id} (update balance, is_active)
+- DELETE /api/v1/admin/tokens/{id} (force revoke без refund)
+
+**3. Audit Logging** (1 день)
+- AuditLog model (action, resource_type, details, IP, user_agent)
+- AuditService.log() integration
+- Retention policy (cleanup logs > 30 days)
+
+**4. Prometheus Metrics** (1 день)
+- Counters: proxy_requests_total, auth_attempts_total, token_purchases_total
+- Gauges: active_tokens, active_sessions, user_count
+- Histograms: proxy_latency_seconds, db_query_duration_seconds
+- GET /metrics endpoint
+
+**См. подробности:** [PHASE_3_MONITORING.md](./PHASE_3_MONITORING.md)
+
+---
+
+## Этап 4: Production Readiness ⏳ ЧАСТИЧНО РЕАЛИЗОВАНО
+
+**Зависимости:** Этапы 2-3 завершены
+**Время:** 4-6 дней
+
+### Цель
+
+Подготовить систему к production deployment с полным набором инфраструктурных компонентов.
+
+### Что уже реализовано (из Этапа 1)
+
+- ✅ Docker Compose production (docker-compose.yml)
+- ✅ Healthchecks для сервисов (PostgreSQL, Redis)
+- ✅ OpenAPI/Swagger (/docs, /redoc)
+- ✅ Deployment guide (docs/DEPLOYMENT_TAILSCALE.md)
+
+### Основные задачи
+
+**1. Rate Limiting** (1-2 дня)
+- Redis-based sliding window rate limiter
+- 3 типа лимитов: auth (5/hour), api (100/min), proxy (1000/min)
+- Bypass для superusers
+
+**2. CI/CD Pipeline** (1 день)
+- GitHub Actions: test workflow (pytest, coverage)
+- GitHub Actions: deploy workflow (Docker build, push, SSH deploy)
+- Codecov integration
+
+**3. Backup Automation** (1 день)
+- PostgreSQL backup script (cron, daily at 3 AM)
+- S3/Backblaze upload (optional)
+- Restore script
+- Retention policy (30 days)
+
+**4. Load Testing** (1-2 дня)
+- Locust test suite
+- Performance benchmarks (1000 req/s, p95 < 200ms)
+- Optimization recommendations
+
+**5. SSL/TLS Configuration** (опционально)
+- Nginx with Let's Encrypt (если не Tailscale)
+- Security headers, rate limiting
+
+**6. Monitoring Integration** (1 день)
+- Prometheus + Grafana docker-compose
+- Grafana dashboards для FastAPI metrics
+
+**См. подробности:** [PHASE_4_PRODUCTION.md](./PHASE_4_PRODUCTION.md)
+
+---
+
+## Future Features 💡 ИДЕИ ДЛЯ БУДУЩЕЙ РАЗРАБОТКИ
+
+**Приоритет:** Низкий (после завершения этапов 1-4)
+**Время:** 10-15 дней
+
+### Обзор
+
+**Этап 2.5: Token Bundles & Referrals** (3-4 дня)
+- TokenBundle model (пакетные предложения со скидками)
+- Реферальная система (referral_code, bonus 10%)
+- GET /api/v1/bundles, POST /api/v1/bundles/{id}/purchase
+- GET /api/v1/users/me/referrals
+
+**Этап 3.5: Usage Analytics** (2-3 дня)
+- GET /api/v1/analytics/usage (user stats: requests, bytes, sessions)
+- GET /api/v1/analytics/admin/global-stats (admin only)
+- Period filtering (day, week, month)
+
+**Этап 4.5: Notification System** (4-5 дней)
+- Email notifications (token expiring, balance low, referral bonus)
+- Webhook notifications (WebhookEndpoint model)
+- Background notification tasks (APScheduler)
+- HMAC signature verification
+
+**См. подробности:** [PHASE_FUTURE.md](./PHASE_FUTURE.md)
+
+---
+
+## Roadmap Timeline
+
+```
+Месяц 1:
+├─ Неделя 1-2: Этап 1 (MVP) ✅ ЗАВЕРШЁН
+├─ Неделя 3: Этап 2 (Валюта) - 5-7 дней
+└─ Неделя 4: Этап 3 (Мониторинг) - 3-5 дней
+
+Месяц 2:
+├─ Неделя 1: Этап 4 (Production) - 4-6 дней
+├─ Неделя 2-3: Future Features (опционально) - 10-15 дней
+└─ Неделя 4: Стабилизация, bug fixes, оптимизация
+```
+
+**Итого:** 15-20 дней (этапы 1-4), 25-35 дней (с Future Features)
+
+---
+
+## Текущий статус (v0.3.0-beta)
+
+**Версия:** 0.3.0-beta
+**Дата:** 2025-11-10
+
+**Завершено:**
+- ✅ Этап 1 (MVP): 104/104 теста, 85%+ покрытие
+- ✅ Упрощённая header-only аутентификация для DTS Monaco
+- ✅ Scope-based access control (full / certificates_only)
+- ✅ Health check system
+- ✅ Docker deployment (Tailscale VPN)
+
+**В разработке:**
+- ⏳ Этап 2 (Валюта): не начат
+- ⏳ Этап 3 (Мониторинг): частично (health checks реализованы)
+- ⏳ Этап 4 (Production): частично (Docker Compose, health checks)
+
+**Следующие шаги:**
+1. Завершить Этап 2 (Currency System) - добавить монетизацию
+2. Завершить Этап 3 (Monitoring) - ProxySession tracking, admin endpoints
+3. Завершить Этап 4 (Production) - rate limiting, CI/CD, load testing
+4. Рассмотреть Future Features - bundles, referrals, analytics
+
+---
+
+## Использование
+
+### Чтение документации по этапам
+
+1. **Начните с текущего README** (этот файл) для обзора
+2. **Прочитайте PHASE_1_MVP.md** для понимания текущей реализации
+3. **Выберите следующий этап** для разработки (PHASE_2_CURRENCY.md, PHASE_3_MONITORING.md, etc.)
+4. **Следуйте roadmap** внутри каждого этапа
+
+### Внесение изменений
+
+При работе над новым этапом:
+1. Обновляйте соответствующий PHASE_X файл
+2. Отмечайте завершённые задачи (✅)
+3. Обновляйте статус в README
+4. Создавайте ADR для архитектурных решений
+
+---
+
+## Ресурсы
+
+**Документация:**
+- [BACKEND.md](../BACKEND.md) - Backend overview
+- [ADR.md](../ADR.md) - Architecture Decision Records
+- [DEVELOPMENT.md](../claude/DEVELOPMENT.md) - Development commands
+- [TESTING.md](../claude/TESTING.md) - Testing guide
+- [TROUBLESHOOTING.md](../claude/TROUBLESHOOTING.md) - Common issues
+
+**API Documentation:**
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
+- Health Check: http://localhost:8000/health
+
+---
+
+**Last updated:** 2025-11-11
