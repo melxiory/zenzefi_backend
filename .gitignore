@@ -222,3 +222,7 @@ test_token.txt
 
 # MCP server configuration (contains database credentials)
 .mcp.json
+
+# Windows command redirection artifacts
+NUL
+nul

@@ -63,9 +63,3 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
-
-
-class UserInDB(UserResponse):
-    """Schema for User in database (includes hashed password)"""
-
-    hashed_password: str

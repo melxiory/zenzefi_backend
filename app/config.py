@@ -57,15 +57,6 @@ class Settings(BaseSettings):
     # Zenzefi Target (via VPN)
     ZENZEFI_TARGET_URL: str = "https://zenzefi-win11-server"
 
-    # Backend URL (для ContentRewriter)
-    # Это URL где доступен ваш backend для клиентов
-    # Например: https://api.zenzefi.com или http://localhost:8000
-    BACKEND_URL: str = "http://localhost:8000"  # Измените на реальный URL в production
-
-    # Cookie Settings
-    COOKIE_SECURE: bool = False  # Set to True in production (HTTPS only)
-    COOKIE_SAMESITE: str = "lax"  # "strict", "lax", or "none" (none requires HTTPS)
-
     # Health Check Settings
     HEALTH_CHECK_INTERVAL: int = 50  # Health check interval in seconds (40-60s recommended)
     HEALTH_CHECK_TIMEOUT: float = 10.0  # Timeout for each individual check in seconds
