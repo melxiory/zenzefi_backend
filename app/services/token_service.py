@@ -1,13 +1,16 @@
 import secrets
 import hashlib
 import json
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from app.models.token import AccessToken
 from app.models.user import User
+from app.models.transaction import Transaction, TransactionType
 from app.core.redis import get_redis_client
 from app.config import settings
 
@@ -18,9 +21,9 @@ class TokenService:
     @staticmethod
     def generate_access_token(
         user_id: str, duration_hours: int, scope: str, db: Session
-    ) -> AccessToken:
+    ) -> Tuple[AccessToken, Decimal]:
         """
-        Generate new access token for user (MVP: бесплатно)
+        Generate new access token for user with balance deduction.
 
         Args:
             user_id: User UUID
@@ -29,10 +32,10 @@ class TokenService:
             db: Database session
 
         Returns:
-            Created AccessToken object
+            Tuple[AccessToken, Decimal]: (created token, cost in ZNC)
 
         Raises:
-            ValueError: If user not found or invalid duration
+            ValueError: If user not found, invalid duration, or insufficient balance
         """
         # Validate duration
         valid_durations = [1, 12, 24, 168, 720]
@@ -41,19 +44,30 @@ class TokenService:
                 f"Invalid duration. Must be one of: {valid_durations}"
             )
 
-        # Get user
-        user = db.query(User).filter(User.id == user_id).first()
+        # 1. Calculate cost
+        cost = settings.get_token_price(duration_hours)
+        if cost is None:
+            raise ValueError(f"Invalid duration_hours: {duration_hours}")
+
+        # 2. Get user with row lock (for atomic balance update)
+        user = db.query(User).filter(User.id == user_id).with_for_update().first()
         if not user:
             raise ValueError("User not found")
 
-        # Generate random token (URL-safe, 48 bytes = 64 chars)
+        # 3. Check balance
+        if user.currency_balance < cost:
+            raise ValueError(
+                f"Insufficient balance. Required: {cost} ZNC, Available: {user.currency_balance} ZNC"
+            )
+
+        # 4. Generate random token (URL-safe, 48 bytes = 64 chars)
         token_string = secrets.token_urlsafe(48)
 
         now = datetime.now(timezone.utc)
         # activated_at будет установлен при первом использовании токена
         # expires_at вычисляется динамически как activated_at + duration_hours
 
-        # Create token record
+        # 5. Create token record
         db_token = AccessToken(
             user_id=user_id,
             token=token_string,
@@ -64,14 +78,29 @@ class TokenService:
             is_active=True,
         )
 
+        # 6. Deduct balance (atomic)
+        user.currency_balance -= cost
+
+        # 7. Create purchase transaction
+        transaction = Transaction(
+            user_id=user_id,
+            amount=-cost,  # Negative for purchase
+            transaction_type=TransactionType.PURCHASE,
+            description=f"Token purchase: {duration_hours}h ({scope})",
+            payment_id=None,
+            created_at=now
+        )
+
+        # 8. Commit all together
         db.add(db_token)
+        db.add(transaction)
         db.commit()
         db.refresh(db_token)
 
         # Cache token in Redis
         TokenService._cache_token(db_token)
 
-        return db_token
+        return db_token, cost
 
     @staticmethod
     def check_token_status(token: str, db: Session) -> Tuple[bool, Optional[dict]]:
@@ -313,3 +342,82 @@ class TokenService:
             # Log error but don't fail
             from loguru import logger
             logger.warning(f"Failed to remove token from Redis: {e}")
+
+    @staticmethod
+    def revoke_token(token_id: UUID, user_id: UUID, db: Session) -> Tuple[bool, Decimal]:
+        """
+        Revoke token and calculate proportional refund.
+
+        Args:
+            token_id: Token UUID
+            user_id: User UUID (for security check)
+            db: Database session
+
+        Returns:
+            Tuple[bool, Decimal]: (success, refund_amount)
+
+        Raises:
+            ValueError: If token not found or already revoked
+        """
+        # 1. Get token with row lock
+        db_token = db.query(AccessToken).filter(
+            AccessToken.id == token_id,
+            AccessToken.user_id == user_id,
+            AccessToken.is_active == True
+        ).with_for_update().first()
+
+        if not db_token:
+            raise ValueError("Token not found or already revoked")
+
+        # 2. Calculate proportional refund
+        now = datetime.now(timezone.utc)
+
+        if db_token.activated_at:
+            # Token was activated - calculate time used
+            activated = db_token.activated_at
+            if activated.tzinfo is None:
+                activated = activated.replace(tzinfo=timezone.utc)
+            time_used_seconds = (now - activated).total_seconds()
+            time_used_hours = time_used_seconds / 3600
+        else:
+            # Token was never activated - full refund
+            time_used_hours = 0
+
+        time_unused_hours = max(0, db_token.duration_hours - time_used_hours)
+
+        cost = settings.get_token_price(db_token.duration_hours)
+        if cost is None:
+            cost = Decimal("0.00")
+
+        refund_amount = cost * Decimal(str(time_unused_hours / db_token.duration_hours))
+        refund_amount = refund_amount.quantize(Decimal('0.01'))  # Round to 2 decimals
+
+        # 3. Revoke token
+        db_token.is_active = False
+        db_token.revoked_at = now
+
+        # 4. Refund to user (with row lock)
+        user = db.query(User).filter(User.id == user_id).with_for_update().first()
+        if not user:
+            raise ValueError("User not found")
+
+        user.currency_balance += refund_amount
+
+        # 5. Create refund transaction (only if refund > 0)
+        if refund_amount > 0:
+            transaction = Transaction(
+                user_id=user_id,
+                amount=refund_amount,
+                transaction_type=TransactionType.REFUND,
+                description=f"Token refund: {time_unused_hours:.1f}h unused",
+                payment_id=None,
+                created_at=now
+            )
+            db.add(transaction)
+
+        db.commit()
+
+        # 6. Remove from Redis cache
+        TokenService._remove_cached_token(db_token.token)
+
+        return True, refund_amount

@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Literal
 from uuid import UUID
 
@@ -37,6 +38,7 @@ class TokenResponse(BaseModel):
     token: str
     duration_hours: int
     scope: str = Field(default="full", description="Access scope")
+    cost_znc: Optional[Decimal] = Field(None, description="Cost in ZNC (None if free)")
     created_at: datetime
     expires_at: Optional[datetime] = None  # NULL until token is activated
     activated_at: Optional[datetime] = None
@@ -56,3 +58,12 @@ class TokenValidationResponse(BaseModel):
     expires_at: Optional[datetime] = None
     time_remaining_seconds: Optional[int] = None
     reason: Optional[str] = None
+
+
+class TokenRevokeResponse(BaseModel):
+    """Schema for token revocation response"""
+
+    revoked: bool = Field(..., description="Whether token was successfully revoked")
+    refund_amount: Decimal = Field(..., description="Amount refunded in ZNC")
+    new_balance: Decimal = Field(..., description="New balance after refund")
+    message: str = Field(..., description="Human-readable message")

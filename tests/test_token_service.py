@@ -23,26 +23,46 @@ def mock_redis(fake_redis):
         yield fake_redis
 
 
+@pytest.fixture
+def funded_test_user(test_db: Session, test_user_data: dict):
+    """
+    Create a test user with 1000 ZNC balance for token purchases
+    """
+    from decimal import Decimal
+    from app.services.currency_service import CurrencyService
+
+    # Create user
+    user_create = UserCreate(**test_user_data)
+    user = AuthService.register_user(user_create, test_db)
+
+    # Fund balance
+    CurrencyService.credit_balance(
+        user_id=user.id,
+        amount=Decimal("1000.00"),
+        description="Test balance",
+        payment_id=None,
+        db=test_db
+    )
+
+    return user
+
+
 class TestTokenServiceGenerate:
     """Tests for access token generation"""
 
     def test_generate_access_token_success(
-        self, test_db: Session, test_user_data: dict
+        self, test_db: Session, funded_test_user
     ):
         """Test successful access token generation"""
-        # Create user first
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
         # Generate token (Redis is mocked automatically)
-        token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        token, cost = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Check token
         assert token is not None
         assert isinstance(token, AccessToken)
-        assert token.user_id == user.id
+        assert token.user_id == funded_test_user.id
         assert token.duration_hours == 24
         assert token.is_active is True
         assert token.activated_at is None  # Not activated yet
@@ -57,18 +77,14 @@ class TestTokenServiceGenerate:
         assert token.expires_at is None  # Not activated yet, so no expiry set
 
     def test_generate_token_valid_durations(
-        self, test_db: Session, test_user_data: dict
+        self, test_db: Session, funded_test_user
     ):
         """Test token generation with all valid durations"""
-        # Create user
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
         valid_durations = [1, 12, 24, 168, 720]
 
         for duration in valid_durations:
-            token = TokenService.generate_access_token(
-                user_id=str(user.id), duration_hours=duration, scope="full", db=test_db
+            token, cost = TokenService.generate_access_token(
+                user_id=str(funded_test_user.id), duration_hours=duration, scope="full", db=test_db
             )
 
             assert token.duration_hours == duration
@@ -100,19 +116,15 @@ class TestTokenServiceGenerate:
             )
 
     def test_generate_multiple_tokens_for_user(
-        self, test_db: Session, test_user_data: dict
+        self, test_db: Session, funded_test_user
     ):
         """Test generating multiple tokens for same user"""
-        # Create user
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
         # Generate multiple tokens
-        token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        token1, cost1 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
-        token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
+        token2, cost2 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Tokens should be different
@@ -123,13 +135,11 @@ class TestTokenServiceGenerate:
 class TestTokenServiceValidate:
     """Tests for access token validation"""
 
-    def test_validate_token_success(self, test_db: Session, test_user_data: dict):
+    def test_validate_token_success(self, test_db: Session, funded_test_user):
         """Test successful token validation"""
-        # Create user and token
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        # Create token
+        token, cost = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Validate token
@@ -140,20 +150,18 @@ class TestTokenServiceValidate:
         assert token_data is not None
 
         # Check token data
-        assert token_data["user_id"] == str(user.id)
+        assert token_data["user_id"] == str(funded_test_user.id)
         assert token_data["token_id"] == str(token.id)
         assert token_data["duration_hours"] == 24
         assert "expires_at" in token_data
 
     def test_validate_token_activates_on_first_use(
-        self, test_db: Session, test_user_data: dict, fake_redis
+        self, test_db: Session, funded_test_user, fake_redis
     ):
         """Test that token is activated on first validation and expires_at is set"""
-        # Create user and token
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        # Create token
+        token, cost = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Token should not be activated yet
@@ -198,13 +206,11 @@ class TestTokenServiceValidate:
         assert is_valid is False
         assert token_data is None
 
-    def test_validate_expired_token(self, test_db: Session, test_user_data: dict, fake_redis):
+    def test_validate_expired_token(self, test_db: Session, funded_test_user, fake_redis):
         """Test validation of expired token"""
-        # Create user and token
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=1, scope="full", db=test_db
+        # Create token
+        token, cost = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=1, scope="full", db=test_db
         )
 
         # Manually activate and expire the token in database
@@ -223,13 +229,11 @@ class TestTokenServiceValidate:
         assert is_valid is False
         assert token_data is None
 
-    def test_validate_revoked_token(self, test_db: Session, test_user_data: dict, fake_redis):
+    def test_validate_revoked_token(self, test_db: Session, funded_test_user, fake_redis):
         """Test validation of revoked token"""
-        # Create user and token
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        # Create token
+        token, cost = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
 
         # Revoke token in database
@@ -265,22 +269,19 @@ class TestTokenServiceGetUserTokens:
         # Should be empty list
         assert tokens == []
 
-    def test_get_user_tokens_all(self, test_db: Session, test_user_data: dict):
+    def test_get_user_tokens_all(self, test_db: Session, funded_test_user):
         """Test getting all tokens for user"""
-        # Create user and tokens
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
-        token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        # Create tokens
+        token1, cost1 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
-        token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
+        token2, cost2 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Get all tokens
         tokens = TokenService.get_user_tokens(
-            user_id=str(user.id), active_only=False, db=test_db
+            user_id=str(funded_test_user.id), active_only=False, db=test_db
         )
 
         # Should return both tokens
@@ -289,17 +290,14 @@ class TestTokenServiceGetUserTokens:
         assert token1.id in token_ids
         assert token2.id in token_ids
 
-    def test_get_user_tokens_active_only(self, test_db: Session, test_user_data: dict):
+    def test_get_user_tokens_active_only(self, test_db: Session, funded_test_user):
         """Test getting only active tokens"""
-        # Create user and tokens
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
-        active_token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        # Create tokens
+        active_token, cost1 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
-        revoked_token = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
+        revoked_token, cost2 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Revoke one token
@@ -309,7 +307,7 @@ class TestTokenServiceGetUserTokens:
 
         # Get active tokens only
         tokens = TokenService.get_user_tokens(
-            user_id=str(user.id), active_only=True, db=test_db
+            user_id=str(funded_test_user.id), active_only=True, db=test_db
         )
 
         # Should return only active token
@@ -317,24 +315,20 @@ class TestTokenServiceGetUserTokens:
         assert tokens[0].id == active_token.id
 
     def test_get_user_tokens_ordered_by_created_at(
-        self, test_db: Session, test_user_data: dict
+        self, test_db: Session, funded_test_user
     ):
         """Test that tokens are ordered by created_at descending"""
-        # Create user and tokens
-        user_create = UserCreate(**test_user_data)
-        user = AuthService.register_user(user_create, test_db)
-
         # Create tokens with slight delay
-        token1 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=24, scope="full", db=test_db
+        token1, cost1 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=24, scope="full", db=test_db
         )
-        token2 = TokenService.generate_access_token(
-            user_id=str(user.id), duration_hours=12, scope="full", db=test_db
+        token2, cost2 = TokenService.generate_access_token(
+            user_id=str(funded_test_user.id), duration_hours=12, scope="full", db=test_db
         )
 
         # Get tokens
         tokens = TokenService.get_user_tokens(
-            user_id=str(user.id), active_only=False, db=test_db
+            user_id=str(funded_test_user.id), active_only=False, db=test_db
         )
 
         # Should be ordered by created_at descending (newest first)

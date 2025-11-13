@@ -158,3 +158,72 @@ def test_user_data_2() -> dict:
         "password": "TestPass456!",
         "full_name": "Test User 2",
     }
+
+
+@pytest.fixture
+def test_user(test_db: Session, test_user_data: dict):
+    """
+    Create a real user in the test database with 0 balance (default)
+    """
+    from decimal import Decimal
+    from app.models import User
+    from app.core.security import get_password_hash
+
+    user = User(
+        email=test_user_data["email"],
+        username=test_user_data["username"],
+        hashed_password=get_password_hash(test_user_data["password"]),
+        full_name=test_user_data.get("full_name"),
+        is_active=True,
+        is_superuser=False,
+        currency_balance=Decimal("0.00"),  # Default: no balance
+    )
+
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+
+    return user
+
+
+@pytest.fixture
+def test_user_with_balance(test_db: Session, test_user_data: dict):
+    """
+    Create a real user in the test database with 1000 ZNC balance
+    (for tests that need to purchase tokens without explicit balance top-up)
+    """
+    from decimal import Decimal
+    from app.models import User
+    from app.core.security import get_password_hash
+
+    user = User(
+        email=test_user_data["email"],
+        username=test_user_data["username"],
+        hashed_password=get_password_hash(test_user_data["password"]),
+        full_name=test_user_data.get("full_name"),
+        is_active=True,
+        is_superuser=False,
+        currency_balance=Decimal("1000.00"),  # Pre-funded for token purchases
+    )
+
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+
+    return user
+
+
+@pytest.fixture(scope="function", autouse=True)
+def override_token_prices(monkeypatch):
+    """
+    Override token prices for testing (ensure non-zero prices)
+    """
+    from decimal import Decimal
+    from app.config import settings
+
+    # Set test prices
+    monkeypatch.setattr(settings, "TOKEN_PRICE_1H", Decimal("1.00"))
+    monkeypatch.setattr(settings, "TOKEN_PRICE_12H", Decimal("10.00"))
+    monkeypatch.setattr(settings, "TOKEN_PRICE_24H", Decimal("18.00"))
+    monkeypatch.setattr(settings, "TOKEN_PRICE_7D", Decimal("100.00"))
+    monkeypatch.setattr(settings, "TOKEN_PRICE_30D", Decimal("300.00"))

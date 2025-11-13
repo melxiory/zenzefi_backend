@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between applications (like DTS Monaco) and the target server, enabling monetization through token-based access control.
 
-**Current Status:** v0.3.0-beta - Simplified header-only authentication for DTS Monaco integration. All core authentication, token generation, proxy functionality, and scope-based access control implemented and tested (104/104 tests passing, 85%+ code coverage).
+**Current Status:** v0.4.0-beta - Full currency system (ZNC) with mock payment gateway implemented. All core authentication, token generation, proxy functionality, scope-based access control, and monetization features tested (148/148 tests passing, 85%+ code coverage).
 
 ## Tech Stack
 
@@ -71,9 +71,9 @@ poetry run alembic revision --autogenerate -m "Description"
 
 ```
 app/
-├── api/v1/          # HTTP endpoints (auth, tokens, users, proxy)
-├── services/        # Business logic (auth, token, proxy, content rewriting, health)
-├── models/          # SQLAlchemy ORM (User, AccessToken)
+├── api/v1/          # HTTP endpoints (auth, tokens, users, currency, webhooks, proxy)
+├── services/        # Business logic (auth, token, currency, payment, proxy, content rewriting, health)
+├── models/          # SQLAlchemy ORM (User, AccessToken, Transaction)
 ├── schemas/         # Pydantic validation
 ├── core/            # Core utilities (security, database, redis, logging, health scheduler)
 ├── config.py        # Application settings
@@ -104,17 +104,37 @@ app/
 - Results cached in Redis (TTL: 120 seconds)
 - Background scheduler runs every 50 seconds
 
+**CurrencyService** (`app/services/currency_service.py`):
+- Manages ZNC (Zenzefi Credits) currency balance
+- Operations: get_balance, credit_balance, get_transactions
+- Atomic balance updates with row-level locking
+- Transaction history with pagination and filtering
+
+**PaymentService** (`app/services/payment_service.py`):
+- MockPaymentProvider for development/testing
+- Simulates payment gateway (YooKassa/Stripe in production)
+- Operations: create_payment, simulate_payment_success, handle_webhook
+- Conversion rate: 1 ZNC = 10 RUB (configurable)
+
 ### Database Models
 
 **User** (`app/models/user.py`):
-- Fields: id (UUID), email, username, hashed_password, full_name, is_active, is_superuser
-- Relationships: tokens (one-to-many with AccessToken, cascade delete)
+- Fields: id (UUID), email, username, hashed_password, full_name, is_active, is_superuser, currency_balance (Decimal)
+- Relationships: tokens (one-to-many with AccessToken, cascade delete), transactions (one-to-many with Transaction, cascade delete)
+- currency_balance: Decimal(10, 2), default 0.00, indexed
 
 **AccessToken** (`app/models/token.py`):
 - Fields: id (UUID), user_id (FK), token (random string), duration_hours, scope, activated_at, is_active, revoked_at
 - `scope` - Access scope: "full" (default) or "certificates_only" (added in v0.2.0)
 - `expires_at` - **computed property** (activated_at + duration_hours), NOT stored in DB
 - Valid durations: 1, 12, 24, 168 (week), 720 (month) hours
+- Pricing: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
+
+**Transaction** (`app/models/transaction.py`):
+- Fields: id (UUID), user_id (FK), amount (Decimal), transaction_type (enum), description, payment_id, created_at
+- TransactionType: DEPOSIT, PURCHASE, REFUND
+- amount: + for deposit/refund, - for purchase
+- payment_id: External payment gateway ID (optional)
 
 ### Redis Cache Structure
 
@@ -168,8 +188,20 @@ HEALTH_CHECK_TIMEOUT=10.0
 - `POST /login` - Login, returns JWT token
 
 ### Tokens (`/api/v1/tokens`)
-- `POST /purchase` - Create access token (JWT auth required, MVP: free)
+- `POST /purchase` - Create access token (JWT auth required, costs ZNC)
 - `GET /my-tokens?active_only=true` - List user's tokens
+- `DELETE /{token_id}` - Revoke token with proportional refund
+
+### Currency (`/api/v1/currency`)
+- `GET /balance` - Get current ZNC balance
+- `GET /transactions` - Get transaction history (pagination, filtering)
+- `POST /mock-purchase` - Mock balance purchase (testing only)
+- `POST /purchase` - Create payment for ZNC purchase (mock payment gateway)
+- `POST /admin/simulate-payment/{payment_id}` - Simulate successful payment (admin)
+
+### Webhooks (`/api/v1/webhooks`)
+- `POST /payment` - Payment webhook handler (for payment gateway callbacks)
+- `GET /mock-payment` - Mock payment completion page (testing only)
 
 ## Token Scopes (Access Control)
 
@@ -341,12 +373,17 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 104 tests, 85%+ coverage
+**Test organization:** 148 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
-- `test_token_service.py` - Token generation, caching (14 tests)
+- `test_token_service.py` - Token generation, caching, revoke (21 tests)
 - `test_api_auth.py` - Auth API endpoints (13 tests)
 - `test_api_tokens.py` - Token purchase API (16 tests)
+- `test_currency_service.py` - Currency balance, transactions (10 tests)
+- `test_api_currency.py` - Currency API endpoints (13 tests)
+- `test_payment_service.py` - Mock payment gateway (5 tests)
+- `test_api_payment.py` - Payment API endpoints (8 tests)
+- `test_token_purchase.py` - Token purchase with balance (8 tests)
 - `test_permissions.py` - Token scope validation (8 tests)
 - `test_token_scopes.py` - Scope integration tests (7 tests)
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
@@ -366,7 +403,7 @@ MCP servers configured in `.mcp.json`:
 ## Notes for Claude Code
 
 **Critical Information:**
-- All tests must pass before considering work complete (104 tests)
+- All tests must pass before considering work complete (148 tests)
 - Use real Redis and PostgreSQL for integration testing (configured in `conftest.py`)
 - Token validation uses two-tier caching: Redis (fast) → PostgreSQL (fallback)
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens

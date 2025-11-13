@@ -6,8 +6,12 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def authenticated_client(client: TestClient, test_user_data: dict, fake_redis):
-    """Create a client with authenticated user and fake Redis"""
+def authenticated_client(client: TestClient, test_user_data: dict, fake_redis, test_db):
+    """Create a client with authenticated user, fake Redis, and funded balance"""
+    from decimal import Decimal
+    from app.models import User
+    from app.services.currency_service import CurrencyService
+
     # Register user
     client.post("/api/v1/auth/register", json=test_user_data)
 
@@ -18,6 +22,16 @@ def authenticated_client(client: TestClient, test_user_data: dict, fake_redis):
     }
     login_response = client.post("/api/v1/auth/login", json=login_data)
     jwt_token = login_response.json()["access_token"]
+
+    # Fund user balance (1000 ZNC for token purchases)
+    user = test_db.query(User).filter(User.email == test_user_data["email"]).first()
+    CurrencyService.credit_balance(
+        user_id=user.id,
+        amount=Decimal("1000.00"),
+        description="Test initial balance",
+        payment_id=None,
+        db=test_db
+    )
 
     # Store token in client for convenience
     client.headers = {"Authorization": f"Bearer {jwt_token}"}
@@ -187,12 +201,26 @@ class TestTokensEndpointsIntegration:
     """Integration tests for tokens endpoints"""
 
     def test_full_token_lifecycle(
-        self, client: TestClient, test_user_data: dict, test_user_data_2: dict
+        self, client: TestClient, test_user_data: dict, test_user_data_2: dict, test_db
     ):
         """Test complete token lifecycle: register -> login -> purchase -> check status"""
+        from decimal import Decimal
+        from app.models import User
+        from app.services.currency_service import CurrencyService
+
         # Step 1: Register user
         register_response = client.post("/api/v1/auth/register", json=test_user_data)
         assert register_response.status_code == 201
+
+        # Fund user balance
+        user = test_db.query(User).filter(User.email == test_user_data["email"]).first()
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
 
         # Step 2: Login
         login_data = {
@@ -224,11 +252,18 @@ class TestTokensEndpointsIntegration:
         assert len(my_tokens_response.json()) == 1
 
     def test_different_users_different_tokens(
-        self, client: TestClient, test_user_data: dict, test_user_data_2: dict
+        self, client: TestClient, test_user_data: dict, test_user_data_2: dict, test_db
     ):
         """Test that different users get different tokens"""
+        from decimal import Decimal
+        from app.models import User
+        from app.services.currency_service import CurrencyService
+
         # Register and login user 1
         client.post("/api/v1/auth/register", json=test_user_data)
+        user1 = test_db.query(User).filter(User.email == test_user_data["email"]).first()
+        CurrencyService.credit_balance(user1.id, Decimal("1000.00"), "Test balance", None, test_db)
+
         login1_response = client.post(
             "/api/v1/auth/login",
             json={"email": test_user_data["email"], "password": test_user_data["password"]},
@@ -237,6 +272,9 @@ class TestTokensEndpointsIntegration:
 
         # Register and login user 2
         client.post("/api/v1/auth/register", json=test_user_data_2)
+        user2 = test_db.query(User).filter(User.email == test_user_data_2["email"]).first()
+        CurrencyService.credit_balance(user2.id, Decimal("1000.00"), "Test balance", None, test_db)
+
         login2_response = client.post(
             "/api/v1/auth/login",
             json={

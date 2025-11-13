@@ -1,8 +1,9 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, String, Boolean, DateTime, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -21,6 +22,9 @@ class User(Base):
     full_name = Column(String, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
+    currency_balance = Column(
+        Numeric(10, 2), default=Decimal("0.00"), nullable=False, index=True, comment="Balance in ZNC (Zenzefi Credits)"
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -28,6 +32,7 @@ class User(Base):
 
     # Relationships
     tokens = relationship("AccessToken", back_populates="user", cascade="all, delete-orphan")
+    transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.username} ({self.email})>"

@@ -22,10 +22,22 @@ class TestProxyStatusEndpoint:
         This is critical: users should be able to check token status
         without starting the expiration countdown.
         """
-        # Create user and token
+        from decimal import Decimal
+        from app.services.currency_service import CurrencyService
+
+        # Create user and fund balance
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
+
+        # Create token
+        token, cost = TokenService.generate_access_token(
             user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
@@ -66,10 +78,22 @@ class TestProxyStatusEndpoint:
 
         Should return time remaining and activated status.
         """
-        # Create user and token
+        from decimal import Decimal
+        from app.services.currency_service import CurrencyService
+
+        # Create user and fund balance
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
+
+        # Create token
+        token, cost = TokenService.generate_access_token(
             user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 

@@ -1,4 +1,5 @@
 from typing import Optional
+from decimal import Decimal
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -61,15 +62,19 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = 50  # Health check interval in seconds (40-60s recommended)
     HEALTH_CHECK_TIMEOUT: float = 10.0  # Timeout for each individual check in seconds
 
-    # Token Pricing (ZNC credits) - для MVP будут бесплатными
-    TOKEN_PRICE_1H: float = 0.0      # Бесплатно для MVP
-    TOKEN_PRICE_12H: float = 0.0     # Бесплатно для MVP
-    TOKEN_PRICE_24H: float = 0.0     # Бесплатно для MVP
-    TOKEN_PRICE_7D: float = 0.0      # Бесплатно для MVP (168 hours)
-    TOKEN_PRICE_30D: float = 0.0     # Бесплатно для MVP (720 hours)
+    # Token Pricing (ZNC credits)
+    TOKEN_PRICE_1H: Decimal = Decimal("1.00")
+    TOKEN_PRICE_12H: Decimal = Decimal("10.00")
+    TOKEN_PRICE_24H: Decimal = Decimal("18.00")
+    TOKEN_PRICE_7D: Decimal = Decimal("100.00")   # 168 hours
+    TOKEN_PRICE_30D: Decimal = Decimal("300.00")  # 720 hours
 
-    def get_token_price(self, duration_hours: int) -> float:
-        """Get token price by duration"""
+    # Payment Gateway (Mock)
+    ZNC_TO_RUB_RATE: Decimal = Decimal("10.00")  # Conversion rate: 1 ZNC = 10 RUB
+    MOCK_PAYMENT_URL: str = "http://localhost:8000/api/v1/webhooks/mock-payment"
+
+    def get_token_price(self, duration_hours: int) -> Optional[Decimal]:
+        """Get token price by duration in ZNC credits"""
         price_map = {
             1: self.TOKEN_PRICE_1H,
             12: self.TOKEN_PRICE_12H,
@@ -77,7 +82,7 @@ class Settings(BaseSettings):
             168: self.TOKEN_PRICE_7D,
             720: self.TOKEN_PRICE_30D,
         }
-        return price_map.get(duration_hours, 0.0)
+        return price_map.get(duration_hours)
 
     class Config:
         env_file = ".env"

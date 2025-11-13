@@ -12,10 +12,22 @@ from app.schemas.user import UserCreate
 
 @pytest.fixture
 def auth_headers(client: TestClient, test_db: Session, test_user_data: dict) -> dict:
-    """Create user, login, and return authentication headers"""
+    """Create user, login, fund balance, and return authentication headers"""
+    from decimal import Decimal
+    from app.services.currency_service import CurrencyService
+
     # Register user
     user_create = UserCreate(**test_user_data)
-    AuthService.register_user(user_create, test_db)
+    user = AuthService.register_user(user_create, test_db)
+
+    # Fund balance
+    CurrencyService.credit_balance(
+        user_id=user.id,
+        amount=Decimal("1000.00"),
+        description="Test balance",
+        payment_id=None,
+        db=test_db
+    )
 
     # Login
     response = client.post(
@@ -89,10 +101,22 @@ class TestTokenScopeValidation:
         self, client: TestClient, test_db: Session, test_user_data: dict
     ):
         """Test that full scope token can access all paths"""
-        # Create user and full scope token
+        from decimal import Decimal
+        from app.services.currency_service import CurrencyService
+
+        # Create user and fund balance
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
+
+        # Create full scope token
+        token, cost = TokenService.generate_access_token(
             user_id=str(user.id), duration_hours=24, scope="full", db=test_db
         )
 
@@ -115,10 +139,22 @@ class TestTokenScopeValidation:
         self, client: TestClient, test_db: Session, test_user_data: dict
     ):
         """Test that certificates_only token can access certificate paths"""
-        # Create user and certificates_only scope token
+        from decimal import Decimal
+        from app.services.currency_service import CurrencyService
+
+        # Create user and fund balance
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
+
+        # Create certificates_only scope token
+        token, cost = TokenService.generate_access_token(
             user_id=str(user.id), duration_hours=24, scope="certificates_only", db=test_db
         )
 
@@ -141,10 +177,22 @@ class TestTokenScopeValidation:
         self, client: TestClient, test_db: Session, test_user_data: dict
     ):
         """Test that certificates_only token blocks non-certificate paths"""
-        # Create user and certificates_only scope token
+        from decimal import Decimal
+        from app.services.currency_service import CurrencyService
+
+        # Create user and fund balance
         user_create = UserCreate(**test_user_data)
         user = AuthService.register_user(user_create, test_db)
-        token = TokenService.generate_access_token(
+        CurrencyService.credit_balance(
+            user_id=user.id,
+            amount=Decimal("1000.00"),
+            description="Test balance",
+            payment_id=None,
+            db=test_db
+        )
+
+        # Create certificates_only scope token
+        token, cost = TokenService.generate_access_token(
             user_id=str(user.id), duration_hours=24, scope="certificates_only", db=test_db
         )
 
