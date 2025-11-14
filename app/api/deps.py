@@ -90,3 +90,29 @@ def get_current_active_user(
         Current active User object
     """
     return current_user
+
+
+def get_current_superuser(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Get current superuser (admin) user
+
+    Requires the user to have is_superuser=True flag set.
+    Used for admin-only endpoints.
+
+    Args:
+        current_user: Current user from get_current_user
+
+    Returns:
+        Current superuser User object
+
+    Raises:
+        HTTPException: If user is not a superuser (403 Forbidden)
+    """
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Superuser permissions required",
+        )
+    return current_user
