@@ -322,7 +322,6 @@ SCOPE_PERMISSIONS = {
 
 ### Health Check
 - `GET /health` - Simple health check (~1ms from Redis cache)
-- `GET /health/detailed` - Detailed health with latency measurements
 
 ### Proxy (`/api/v1/proxy`)
 - `GET /status` - Check authentication status (requires `X-Access-Token` header)

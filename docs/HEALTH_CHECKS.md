@@ -24,14 +24,13 @@ Zenzefi Backend включает систему мониторинга сост�
          │  (Full HealthResponse)│
          └──────────────────────┘
                     │
-        ┌───────────┴───────────┐
-        ▼                       ▼
-┌──────────────────┐    ┌──────────────────────┐
-│  GET /health     │    │  GET /health/detailed│
-│  Minimal (61B)   │    │  Full (348B)         │
-│  status+timestamp│    │  All service details │
-│  ~1ms response   │    │  ~1ms response       │
-└──────────────────┘    └──────────────────────┘
+                    ▼
+         ┌──────────────────┐
+         │  GET /health     │
+         │  Minimal (61B)   │
+         │  status+timestamp│
+         │  ~1ms response   │
+         └──────────────────┘
 ```
 
 ## Components
@@ -61,7 +60,7 @@ APScheduler интеграция для периодических провер�
 Pydantic модели для типизации ответов:
 - `ServiceStatus` - статус отдельного сервиса (up/down/unknown)
 - `OverallStatus` - общий статус системы (healthy/degraded/unhealthy)
-- `HealthResponse` - полный ответ с детальной информацией (для `/health/detailed`)
+- `HealthResponse` - полный ответ с детальной информацией (используется внутри)
 - `SimpleHealthResponse` - минимальный ответ (для `/health`)
 
 ## API Endpoints
@@ -96,72 +95,12 @@ Pydantic модели для типизации ответов:
 - Response size: 61 bytes
 - No detailed service information (lightweight)
 
----
-
-### GET /health/detailed
-
-Возвращает **полный** статус здоровья системы со всеми деталями по каждому сервису.
-
-**Назначение:** Детальная диагностика, debugging, внутренний мониторинг с метриками.
-
-**Response (348 bytes):**
-
-```json
-{
-  "status": "healthy",
-  "timestamp": "2025-11-05T01:53:05.921000",
-  "checks": {
-    "database": {
-      "status": "up",
-      "latency_ms": 5.73,
-      "error": null,
-      "url": null
-    },
-    "redis": {
-      "status": "up",
-      "latency_ms": 1.18,
-      "error": null,
-      "url": null
-    },
-    "zenzefi": {
-      "status": "up",
-      "latency_ms": 1651.53,
-      "error": null,
-      "url": "https://zenzefi-win11-server"
-    }
-  },
-  "overall": {
-    "healthy_count": 3,
-    "total_count": 3
-  }
-}
-```
-
-**Status Codes:**
-
-- `200 OK` - Health check executed successfully
-
-**Performance:**
-- Response time: ~1ms (cached from Redis)
-- Response size: 348 bytes
-- Includes latency metrics for each service
-- Includes error messages if service is down
-
----
-
-### When to Use Which Endpoint?
-
-| Use Case | Endpoint | Reason |
-|----------|----------|--------|
-| Kubernetes liveness/readiness probes | `/health` | Minimal overhead, fast response |
-| Load balancer health checks | `/health` | Lightweight, only needs status |
-| Monitoring dashboards (Prometheus, Grafana) | `/health/detailed` | Need metrics (latency, errors) |
-| Manual debugging/diagnostics | `/health/detailed` | Full visibility into each service |
-| High-frequency polling (>1 req/sec) | `/health` | Reduces network bandwidth |
-| CI/CD pipeline validation | `/health` | Fast, simple status check |
-| Alerting with detailed context | `/health/detailed` | Error messages for notifications |
-
-**Recommendation:** Use `/health` by default, switch to `/health/detailed` only when you need diagnostics or metrics.
+**Use Cases:**
+- Kubernetes liveness/readiness probes - minimal overhead
+- Load balancer health checks - lightweight, only status needed
+- High-frequency polling (>1 req/sec) - reduces bandwidth
+- CI/CD pipeline validation - fast status check
+- Basic monitoring and alerting
 
 ## Configuration
 
@@ -178,20 +117,14 @@ HEALTH_CHECK_TIMEOUT=10.0  # Timeout for each check in seconds (default: 10.0)
 ### cURL
 
 ```bash
-# Minimal health check (recommended for monitoring)
+# Health check
 curl http://localhost:8000/health
 
-# Detailed health check (for debugging)
-curl http://localhost:8000/health/detailed
+# Pretty-printed JSON
+curl -s http://localhost:8000/health | python -m json.tool
 
-# Pretty-printed detailed JSON
-curl -s http://localhost:8000/health/detailed | python -m json.tool
-
-# Check only status field (minimal endpoint)
+# Check only status field
 curl -s http://localhost:8000/health | jq '.status'
-
-# Check database latency (detailed endpoint)
-curl -s http://localhost:8000/health/detailed | jq '.checks.database.latency_ms'
 ```
 
 ### Python (httpx)
@@ -199,7 +132,7 @@ curl -s http://localhost:8000/health/detailed | jq '.checks.database.latency_ms'
 ```python
 import httpx
 
-# Minimal health check (fast, lightweight)
+# Health check
 response = httpx.get("http://localhost:8000/health")
 health = response.json()
 
@@ -209,19 +142,6 @@ elif health["status"] == "degraded":
     print("⚠ Warning: System is degraded")
 else:
     print("✗ Critical: System is unhealthy!")
-
-# Detailed health check (with diagnostics)
-response = httpx.get("http://localhost:8000/health/detailed")
-health = response.json()
-
-if health["status"] != "healthy":
-    print(f"Services up: {health['overall']['healthy_count']}/3")
-    # Check individual service errors
-    for service, check in health["checks"].items():
-        if check["status"] != "up":
-            print(f"  {service}: {check['error']}")
-        else:
-            print(f"  {service}: OK (latency: {check['latency_ms']}ms)")
 ```
 
 ### Monitoring Integration
@@ -241,10 +161,8 @@ scrape_configs:
 
 **Grafana:**
 
-Создать dashboard с панелями:
+Создать dashboard с панелью:
 - Overall Status (gauge: healthy/degraded/unhealthy)
-- Service Latencies (graph: database_latency, redis_latency, zenzefi_latency)
-- Uptime Percentage (stat: healthy_count / total_count)
 
 ## Troubleshooting
 
@@ -303,5 +221,4 @@ docker exec -it zenzefi-redis-dev redis-cli
 - [ ] Добавить проверку дополнительных сервисов (например, Celery worker)
 - [ ] Prometheus metrics endpoint (`/metrics`)
 - [ ] Alerting через email/Slack при degraded/unhealthy статусе
-- [ ] Detailed health check для каждого компонента (`/health/database`, `/health/redis`, etc.)
 - [ ] Health check dashboard (HTML страница с live updates)

@@ -102,7 +102,6 @@ async def health_check():
             - status: Overall system status (healthy/degraded/unhealthy)
             - timestamp: Time of last health check
 
-    For detailed information, use GET /health/detailed
     """
     # Try to get cached health status from Redis
     cached_health = HealthCheckService.get_health_from_redis()
@@ -122,41 +121,6 @@ async def health_check():
         "status": health.status,
         "timestamp": health.timestamp
     }
-
-
-# Detailed health check endpoint
-@app.get("/health/detailed", tags=["Health"], response_model=HealthResponse)
-async def health_check_detailed():
-    """
-    Detailed health check endpoint
-
-    Returns comprehensive health status with all service details.
-    Use this endpoint for debugging and internal monitoring.
-
-    The health status is updated every 50 seconds by a background scheduler.
-
-    Returns:
-        HealthResponse: Detailed health status of all system components
-            - status: Overall system status (healthy/degraded/unhealthy)
-            - timestamp: Time of last health check
-            - checks: Individual service statuses (database, redis, zenzefi)
-                * status: up/down/unknown
-                * latency_ms: Response time in milliseconds
-                * error: Error message if service is down
-                * url: Service URL (for external services)
-            - overall: Statistics (healthy_count, total_count)
-    """
-    # Try to get cached health status from Redis
-    cached_health = HealthCheckService.get_health_from_redis()
-
-    if cached_health:
-        return cached_health
-
-    # If no cached data, perform a fresh check
-    logger.warning("No cached health status found, performing fresh check")
-    health = await HealthCheckService.perform_and_cache_health_check()
-
-    return health
 
 
 # Root endpoint
