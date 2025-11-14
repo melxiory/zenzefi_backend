@@ -46,7 +46,7 @@ class TestRootEndpoint:
 
         # Check values
         assert "Welcome to Zenzefi Backend" in data["message"]
-        assert data["version"] == "0.1.0"  # Current version
+        assert data["version"] == "0.4.1-beta"  # Current version
         assert data["docs"] == "/docs"
 
 

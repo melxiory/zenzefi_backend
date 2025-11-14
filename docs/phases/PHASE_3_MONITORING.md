@@ -15,8 +15,7 @@
 ## ✅ УЖЕ РЕАЛИЗОВАНО (из Этапа 1)
 
 **Health Check System:**
-- GET /health - быстрая проверка из Redis (~1ms)
-- GET /health/detailed - детальная с latency
+- GET /health - минимальная проверка из Redis (~1ms, только status + timestamp)
 - Background scheduler (APScheduler, 50s interval)
 - Проверки: PostgreSQL, Redis, Zenzefi server
 - Redis кеширование результатов (TTL: 120s)
