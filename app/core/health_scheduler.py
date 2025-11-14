@@ -13,6 +13,7 @@ from loguru import logger
 
 from app.config import settings
 from app.services.health_service import HealthCheckService
+from app.core.session_cleanup import cleanup_inactive_sessions
 
 
 class HealthCheckScheduler:
@@ -48,6 +49,16 @@ class HealthCheckScheduler:
             max_instances=1,  # Only one check at a time
         )
 
+        # Schedule session cleanup (every 15 minutes)
+        self.scheduler.add_job(
+            func=cleanup_inactive_sessions,
+            trigger=IntervalTrigger(minutes=15),
+            id="session_cleanup",
+            name="Inactive Session Cleanup",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         # Start scheduler
         self.scheduler.start()
 
@@ -56,6 +67,7 @@ class HealthCheckScheduler:
         logger.info(
             f"Health check scheduler started (interval: {settings.HEALTH_CHECK_INTERVAL}s)"
         )
+        logger.info("Session cleanup scheduler started (interval: 15min)")
 
         # Run first check immediately (non-blocking)
         asyncio.create_task(self._run_health_check())

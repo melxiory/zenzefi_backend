@@ -227,3 +227,73 @@ def override_token_prices(monkeypatch):
     monkeypatch.setattr(settings, "TOKEN_PRICE_24H", Decimal("18.00"))
     monkeypatch.setattr(settings, "TOKEN_PRICE_7D", Decimal("100.00"))
     monkeypatch.setattr(settings, "TOKEN_PRICE_30D", Decimal("300.00"))
+
+
+@pytest.fixture
+def test_user_2(test_db: Session, test_user_data_2: dict):
+    """
+    Create a second user in the test database
+    """
+    from decimal import Decimal
+    from app.models import User
+    from app.core.security import get_password_hash
+
+    user = User(
+        email=test_user_data_2["email"],
+        username=test_user_data_2["username"],
+        hashed_password=get_password_hash(test_user_data_2["password"]),
+        full_name=test_user_data_2.get("full_name"),
+        is_active=True,
+        is_superuser=False,
+        currency_balance=Decimal("0.00"),
+    )
+
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+
+    return user
+
+
+@pytest.fixture
+def test_token(test_db: Session, test_user):
+    """
+    Create an access token for test_user
+    """
+    import secrets
+    from app.models import AccessToken
+
+    token = AccessToken(
+        user_id=test_user.id,
+        token=secrets.token_urlsafe(48),
+        duration_hours=24,
+        scope="full"
+    )
+
+    test_db.add(token)
+    test_db.commit()
+    test_db.refresh(token)
+
+    return token
+
+
+@pytest.fixture
+def test_token_2(test_db: Session, test_user):
+    """
+    Create a second access token for test_user
+    """
+    import secrets
+    from app.models import AccessToken
+
+    token = AccessToken(
+        user_id=test_user.id,
+        token=secrets.token_urlsafe(48),
+        duration_hours=12,
+        scope="full"
+    )
+
+    test_db.add(token)
+    test_db.commit()
+    test_db.refresh(token)
+
+    return token

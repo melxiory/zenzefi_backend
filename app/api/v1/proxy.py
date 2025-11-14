@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.core.permissions import validate_path_access
 from app.services.token_service import TokenService
 from app.services.proxy_service import ProxyService
+from app.services.session_service import SessionService
 
 router = APIRouter()
 
@@ -161,6 +162,22 @@ async def proxy_to_zenzefi(
         f"method={request.method} user_id={user_id}"
     )
     # ============ END SCOPE VALIDATION ============
+
+    # Track proxy session
+    ip_address = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent")
+
+    try:
+        SessionService.track_request(
+            user_id=user_id,
+            token_id=token_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            db=db
+        )
+    except Exception as e:
+        # Don't fail the request if session tracking fails
+        logger.warning(f"Failed to track session: {e}")
 
     # Proxy request to Zenzefi
     response = await ProxyService.proxy_request(
