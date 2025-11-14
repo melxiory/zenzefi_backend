@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from decimal import Decimal
 
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
@@ -52,6 +53,17 @@ class AccessToken(Base):
         if activated.tzinfo is None:
             activated = activated.replace(tzinfo=timezone.utc)
         return activated + timedelta(hours=self.duration_hours)
+
+    @property
+    def cost_znc(self) -> Optional[Decimal]:
+        """
+        Calculate token cost dynamically from duration.
+
+        Returns:
+            Decimal cost in ZNC, or None if invalid duration
+        """
+        from app.config import settings
+        return settings.get_token_price(self.duration_hours)
 
     def __repr__(self):
         return f"<AccessToken {self.id} user={self.user_id} expires={self.expires_at}>"

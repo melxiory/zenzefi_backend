@@ -17,6 +17,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Current Status:** v0.4.0-beta - Full currency system (ZNC) with mock payment gateway implemented. All core authentication, token generation, proxy functionality, scope-based access control, and monetization features tested (148/148 tests passing, 85%+ code coverage).
 
+**Phase Status:**
+- ✅ Phase 1 (MVP): Core authentication, tokens, HTTP proxy, health checks - COMPLETED
+- ✅ Phase 2 (Currency System): ZNC balance, transactions, payment gateway, refunds - COMPLETED
+- ⏳ Phase 3 (Monitoring): ProxySession tracking, admin endpoints - PARTIALLY (health checks done)
+- ⏳ Phase 4 (Production): Rate limiting, CI/CD, backups - PARTIALLY (Docker deployment done)
+
 ## Tech Stack
 
 - **Python 3.13+** - Runtime environment
@@ -121,7 +127,7 @@ app/
 **User** (`app/models/user.py`):
 - Fields: id (UUID), email, username, hashed_password, full_name, is_active, is_superuser, currency_balance (Decimal)
 - Relationships: tokens (one-to-many with AccessToken, cascade delete), transactions (one-to-many with Transaction, cascade delete)
-- currency_balance: Decimal(10, 2), default 0.00, indexed
+- currency_balance: Decimal(10, 2), default 0.00, indexed (added in Phase 2)
 
 **AccessToken** (`app/models/token.py`):
 - Fields: id (UUID), user_id (FK), token (random string), duration_hours, scope, activated_at, is_active, revoked_at
@@ -130,11 +136,12 @@ app/
 - Valid durations: 1, 12, 24, 168 (week), 720 (month) hours
 - Pricing: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
 
-**Transaction** (`app/models/transaction.py`):
+**Transaction** (`app/models/transaction.py`) - *Added in Phase 2*:
 - Fields: id (UUID), user_id (FK), amount (Decimal), transaction_type (enum), description, payment_id, created_at
-- TransactionType: DEPOSIT, PURCHASE, REFUND
-- amount: + for deposit/refund, - for purchase
-- payment_id: External payment gateway ID (optional)
+- TransactionType enum: DEPOSIT (balance top-up), PURCHASE (token purchase), REFUND (token revoke refund)
+- amount: positive for deposit/refund, negative for purchase
+- payment_id: External payment gateway transaction ID (optional, for tracking)
+- Relationship: user (many-to-one with User)
 
 ### Redis Cache Structure
 
@@ -190,17 +197,17 @@ HEALTH_CHECK_TIMEOUT=10.0
 ### Tokens (`/api/v1/tokens`)
 - `POST /purchase` - Create access token (JWT auth required, costs ZNC)
 - `GET /my-tokens?active_only=true` - List user's tokens
-- `DELETE /{token_id}` - Revoke token with proportional refund
+- `DELETE /{token_id}` - Revoke token with proportional refund (Phase 2)
 
-### Currency (`/api/v1/currency`)
+### Currency (`/api/v1/currency`) - *Phase 2*
 - `GET /balance` - Get current ZNC balance
-- `GET /transactions` - Get transaction history (pagination, filtering)
-- `POST /mock-purchase` - Mock balance purchase (testing only)
+- `GET /transactions` - Get transaction history (pagination, filtering by type)
+- `POST /mock-purchase` - Mock balance purchase (testing only, bypasses payment gateway)
 - `POST /purchase` - Create payment for ZNC purchase (mock payment gateway)
-- `POST /admin/simulate-payment/{payment_id}` - Simulate successful payment (admin)
+- `POST /admin/simulate-payment/{payment_id}` - Simulate successful payment (admin, testing)
 
-### Webhooks (`/api/v1/webhooks`)
-- `POST /payment` - Payment webhook handler (for payment gateway callbacks)
+### Webhooks (`/api/v1/webhooks`) - *Phase 2*
+- `POST /payment` - Payment webhook handler (for payment gateway callbacks, HMAC verification in production)
 - `GET /mock-payment` - Mock payment completion page (testing only)
 
 ## Token Scopes (Access Control)
@@ -379,16 +386,18 @@ Project uses **Pydantic v2**:
 - `test_token_service.py` - Token generation, caching, revoke (21 tests)
 - `test_api_auth.py` - Auth API endpoints (13 tests)
 - `test_api_tokens.py` - Token purchase API (16 tests)
-- `test_currency_service.py` - Currency balance, transactions (10 tests)
-- `test_api_currency.py` - Currency API endpoints (13 tests)
-- `test_payment_service.py` - Mock payment gateway (5 tests)
-- `test_api_payment.py` - Payment API endpoints (8 tests)
-- `test_token_purchase.py` - Token purchase with balance (8 tests)
+- `test_currency_service.py` - Currency balance, transactions (10 tests) *Phase 2*
+- `test_api_currency.py` - Currency API endpoints (13 tests) *Phase 2*
+- `test_payment_service.py` - Mock payment gateway (5 tests) *Phase 2*
+- `test_api_payment.py` - Payment API endpoints (8 tests) *Phase 2*
+- `test_token_purchase.py` - Token purchase with balance (8 tests) *Phase 2*
 - `test_permissions.py` - Token scope validation (8 tests)
 - `test_token_scopes.py` - Scope integration tests (7 tests)
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
 - `test_health_service.py` - Health check service (15 tests)
 - `test_main.py` - Health checks, CORS, routing (9 tests)
+
+**Phase 2 Tests Added:** 44 new tests (currency, payment, token purchase integration)
 
 **See [TESTING.md](./docs/claude/TESTING.md) for detailed testing guide.**
 
@@ -403,7 +412,7 @@ MCP servers configured in `.mcp.json`:
 ## Notes for Claude Code
 
 **Critical Information:**
-- All tests must pass before considering work complete (148 tests)
+- All tests must pass before considering work complete (148 tests as of Phase 2)
 - Use real Redis and PostgreSQL for integration testing (configured in `conftest.py`)
 - Token validation uses two-tier caching: Redis (fast) → PostgreSQL (fallback)
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens
@@ -417,6 +426,14 @@ MCP servers configured in `.mcp.json`:
   - When deserializing from Redis/ISO format: `datetime.fromisoformat()` may return timezone-naive datetime
   - **ALWAYS check timezone before comparison:** `if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)`
   - Tests JWT: use `datetime.utcfromtimestamp()` (not `fromtimestamp`)
+
+**Phase 2 (Currency System) - Completed:**
+- Currency balance stored as Decimal(10, 2) to avoid floating-point errors
+- Token purchase charges balance atomically with `with_for_update()` row locking
+- Token revoke calculates proportional refund: `refund = cost * (time_unused / total_duration)`
+- MockPaymentProvider simulates payment gateway for development (replace with YooKassa/Stripe in production)
+- Transaction history tracks all balance changes (DEPOSIT, PURCHASE, REFUND)
+- Pricing: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
 
 **When writing code:**
 - Follow existing patterns in codebase

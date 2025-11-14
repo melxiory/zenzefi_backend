@@ -130,7 +130,7 @@ def test_revoke_token_full_refund(test_db: Session, test_user: User):
 
 
 def test_revoke_token_partial_refund(test_db: Session, test_user: User):
-    """Test revoking an activated token (partial refund)"""
+    """Test that revoking an activated token raises ValueError (cannot revoke)"""
     # Credit balance and purchase token
     CurrencyService.credit_balance(
         user_id=test_user.id,
@@ -153,24 +153,26 @@ def test_revoke_token_partial_refund(test_db: Session, test_user: User):
     test_db.commit()
     test_db.refresh(token)
 
-    # Revoke token
-    success, refund = TokenService.revoke_token(
-        token_id=token.id,
-        user_id=test_user.id,
-        db=test_db
-    )
+    # Try to revoke activated token - should raise ValueError
+    with pytest.raises(ValueError, match="Cannot revoke activated token"):
+        TokenService.revoke_token(
+            token_id=token.id,
+            user_id=test_user.id,
+            db=test_db
+        )
 
-    assert success is True
-    # Should refund ~50% of 18 ZNC = 9 ZNC
-    assert refund == Decimal("9.00")
-
-    # Verify balance
+    # Verify balance unchanged (no refund was processed)
     balance = CurrencyService.get_balance(test_user.id, test_db)
-    assert balance == Decimal("91.00")  # 82 + 9
+    assert balance == Decimal("82.00")  # Original balance after purchase
+
+    # Verify token still active (revocation failed)
+    test_db.refresh(token)
+    assert token.is_active is True
+    assert token.revoked_at is None
 
 
 def test_revoke_token_no_refund(test_db: Session, test_user: User):
-    """Test revoking an expired token (no refund)"""
+    """Test that revoking an expired token raises ValueError (cannot revoke activated tokens)"""
     # Credit balance and purchase token
     CurrencyService.credit_balance(
         user_id=test_user.id,
@@ -193,17 +195,15 @@ def test_revoke_token_no_refund(test_db: Session, test_user: User):
     test_db.commit()
     test_db.refresh(token)
 
-    # Revoke token
-    success, refund = TokenService.revoke_token(
-        token_id=token.id,
-        user_id=test_user.id,
-        db=test_db
-    )
+    # Try to revoke expired token - should raise ValueError (still activated)
+    with pytest.raises(ValueError, match="Cannot revoke activated token"):
+        TokenService.revoke_token(
+            token_id=token.id,
+            user_id=test_user.id,
+            db=test_db
+        )
 
-    assert success is True
-    assert refund == Decimal("0.00")  # No refund (expired)
-
-    # Balance should remain at 82
+    # Balance should remain at 82 (no refund processed)
     balance = CurrencyService.get_balance(test_user.id, test_db)
     assert balance == Decimal("82.00")
 
@@ -245,7 +245,8 @@ def test_revoke_token_creates_transaction(test_db: Session, test_user: User):
     assert total == 1
     assert transactions[0].amount == Decimal("18.00")  # Positive for refund
     assert transactions[0].transaction_type == TransactionType.REFUND
-    assert "unused" in transactions[0].description.lower()
+    assert "refund" in transactions[0].description.lower()
+    assert "not activated" in transactions[0].description.lower()
 
 
 def test_revoke_token_not_found(test_db: Session, test_user: User):

@@ -49,11 +49,8 @@ def purchase_token(
             str(current_user.id), token_data.duration_hours, token_data.scope, db
         )
 
-        # Prepare response with cost information
-        token_response = TokenResponse.model_validate(token)
-        token_response.cost_znc = cost
-
-        return token_response
+        # cost_znc is now automatically calculated via @property in AccessToken model
+        return TokenResponse.model_validate(token)
     except ValueError as e:
         error_msg = str(e)
         # Check if insufficient balance error
@@ -97,12 +94,14 @@ def revoke_token(
     db: Session = Depends(get_db),
 ):
     """
-    Revoke (delete) an access token with proportional refund.
+    Revoke (delete) an access token with full refund.
 
-    Refund calculation:
-    - Not activated: 100% refund
-    - Partially used: Proportional refund based on unused time
-    - Fully expired: 0% refund
+    Only non-activated tokens can be revoked. Once a token is activated
+    (used for the first time), it cannot be refunded.
+
+    Refund policy:
+    - Not activated: 100% refund (allowed)
+    - Activated: Cannot revoke (error)
 
     Args:
         token_id: UUID of the token to revoke
@@ -115,6 +114,7 @@ def revoke_token(
     Raises:
         HTTPException:
             - 404: Token not found or already revoked
+            - 400: Token is already activated (cannot revoke)
             - 403: Token belongs to another user
     """
     try:

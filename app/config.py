@@ -1,6 +1,6 @@
 from typing import Optional
 from decimal import Decimal
-from pydantic import field_validator
+from pydantic import field_validator, Field
 from pydantic_settings import BaseSettings
 
 
@@ -63,14 +63,14 @@ class Settings(BaseSettings):
     HEALTH_CHECK_TIMEOUT: float = 10.0  # Timeout for each individual check in seconds
 
     # Token Pricing (ZNC credits)
-    TOKEN_PRICE_1H: Decimal = Decimal("1.00")
-    TOKEN_PRICE_12H: Decimal = Decimal("10.00")
-    TOKEN_PRICE_24H: Decimal = Decimal("18.00")
-    TOKEN_PRICE_7D: Decimal = Decimal("100.00")   # 168 hours
-    TOKEN_PRICE_30D: Decimal = Decimal("300.00")  # 720 hours
+    TOKEN_PRICE_1H: Decimal = Field(default_factory=lambda: Decimal("1.00"))
+    TOKEN_PRICE_12H: Decimal = Field(default_factory=lambda: Decimal("10.00"))
+    TOKEN_PRICE_24H: Decimal = Field(default_factory=lambda: Decimal("18.00"))
+    TOKEN_PRICE_7D: Decimal = Field(default_factory=lambda: Decimal("100.00"))   # 168 hours
+    TOKEN_PRICE_30D: Decimal = Field(default_factory=lambda: Decimal("300.00"))  # 720 hours
 
     # Payment Gateway (Mock)
-    ZNC_TO_RUB_RATE: Decimal = Decimal("10.00")  # Conversion rate: 1 ZNC = 10 RUB
+    ZNC_TO_RUB_RATE: Decimal = Field(default_factory=lambda: Decimal("10.00"))  # Conversion rate: 1 ZNC = 10 RUB
     MOCK_PAYMENT_URL: str = "http://localhost:8000/api/v1/webhooks/mock-payment"
 
     def get_token_price(self, duration_hours: int) -> Optional[Decimal]:

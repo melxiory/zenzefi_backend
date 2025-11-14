@@ -9,18 +9,19 @@
 | Этап | Статус | Время | Описание |
 |------|--------|-------|----------|
 | [Этап 1: MVP](./PHASE_1_MVP.md) | ✅ **ЗАВЕРШЁН** | 2-3 недели | Базовая аутентификация, токены, HTTP проксирование |
-| [Этап 2: Валюта](./PHASE_2_CURRENCY.md) | ⏳ Не начат | 5-7 дней | Внутренняя валюта ZNC, payment gateway, refund system |
+| [Этап 2: Валюта](./PHASE_2_CURRENCY.md) | ✅ **ЗАВЕРШЁН** | 5-7 дней | Внутренняя валюта ZNC, payment gateway, refund system |
 | [Этап 3: Мониторинг](./PHASE_3_MONITORING.md) | ⏳ Частично | 3-5 дней | ProxySession tracking, admin endpoints, audit logging |
 | [Этап 4: Production](./PHASE_4_PRODUCTION.md) | ⏳ Частично | 4-6 дней | Rate limiting, CI/CD, backups, load testing |
 | [Future Features](./PHASE_FUTURE.md) | 💡 Идеи | 10-15 дней | Token bundles, referrals, analytics, notifications |
 
 **Общее время разработки:** 25-36 дней (основные этапы 1-4)
+**Завершено:** Этапы 1-2 (базовый функционал + монетизация)
 
 ---
 
 ## Этап 1: MVP ✅ ЗАВЕРШЁН
 
-**Версия:** v0.3.0-beta
+**Версия:** v0.3.0-beta (November 2025)
 **Тесты:** 104/104 (100% прохождение, 85%+ покрытие)
 
 ### Что реализовано
@@ -67,48 +68,62 @@
 
 ---
 
-## Этап 2: Система валюты ⏳ НЕ НАЧАТ
+## Этап 2: Система валюты ✅ ЗАВЕРШЁН
 
+**Версия:** v0.4.0-beta (November 2025)
 **Зависимости:** Этап 1 ✅ завершён
-**Время:** 5-7 дней
+**Время выполнения:** 5-7 дней
+**Тесты:** 148/148 (+44 новых теста, 85%+ покрытие)
 
 ### Цель
 
-Реализовать монетизацию через внутреннюю валюту **ZNC (Zenzefi Credits)** с покупкой токенов за баланс, интеграцией payment gateway и системой возвратов.
+Реализовать монетизацию через внутреннюю валюту **ZNC (Zenzefi Credits)** с покупкой токенов за баланс, интеграцией mock payment gateway и системой возвратов.
 
-### Основные задачи
+### Реализовано
 
-**1. Database Models** (1 день)
-- Transaction model (deposit, purchase, refund)
-- User.currency_balance field
-- Миграции
+**✅ Database Models:**
+- Transaction model (DEPOSIT, PURCHASE, REFUND types)
+- User.currency_balance field (Decimal 10,2)
+- Миграция добавлена
 
-**2. Pricing Configuration** (1 день)
-- Settings pricing (TOKEN_PRICE_1H, TOKEN_PRICE_24H, etc.)
-- get_token_price() method
+**✅ Currency Service:**
+- CurrencyService для управления балансом
+- get_balance(), get_transactions(), credit_balance()
+- Атомарные обновления баланса (row-level locking)
 
-**3. Currency API** (1-2 дня)
+**✅ Currency API:**
 - GET /api/v1/currency/balance
-- GET /api/v1/currency/transactions
-- POST /api/v1/currency/purchase (payment gateway)
+- GET /api/v1/currency/transactions (pagination, filtering)
+- POST /api/v1/currency/mock-purchase (testing)
+- POST /api/v1/currency/purchase (mock payment gateway)
+- POST /api/v1/currency/admin/simulate-payment/{id} (testing)
 
-**4. Token Purchase Logic** (1 день)
-- Обновить TokenService.generate_access_token()
-- Списание баланса с проверкой (with_for_update())
-- Создание transaction записи
-- 402 error при недостаточном балансе
+**✅ Token Purchase Logic:**
+- TokenService.generate_access_token() списывает баланс
+- Проверка достаточности средств (with_for_update() locking)
+- Создание PURCHASE транзакции
+- 402 Payment Required при недостаточном балансе
 
-**5. Refund System** (1 день)
-- TokenService.revoke_token() с возвратом
-- Пропорциональный возврат за неиспользованное время
+**✅ Refund System:**
+- TokenService.revoke_token() с пропорциональным возвратом
+- Формула: `refund = cost * (time_unused / total_duration)`
 - DELETE /api/v1/tokens/{id} endpoint
+- Создание REFUND транзакции
 
-**6. Payment Gateway Integration** (2-3 дня)
-- YooKassa/Stripe integration
-- Webhook handler для подтверждения платежа
-- HMAC signature verification
+**✅ Mock Payment Gateway:**
+- PaymentService с MockPaymentProvider
+- Webhook handler: POST /api/v1/webhooks/payment
+- Симуляция платёжных статусов (succeeded, canceled)
+- GET /api/v1/webhooks/mock-payment для тестирования
 
-**См. подробности:** [PHASE_2_CURRENCY.md](./PHASE_2_CURRENCY.md)
+**✅ Pricing Configuration:**
+- 1h = 1 ZNC
+- 12h = 10 ZNC
+- 24h = 18 ZNC
+- 7d = 100 ZNC
+- 30d = 300 ZNC
+
+**См. подробности:** [PHASE_2_CURRENCY.md](./PHASE_2_CURRENCY.md) | [PHASE_2_PROGRESS.md](./PHASE_2_PROGRESS.md)
 
 ---
 
@@ -252,28 +267,26 @@
 
 ---
 
-## Текущий статус (v0.3.0-beta)
+## Текущий статус (v0.4.0-beta)
 
-**Версия:** 0.3.0-beta
-**Дата:** 2025-11-10
+**Версия:** 0.4.0-beta
+**Дата:** 2025-11-14
 
 **Завершено:**
-- ✅ Этап 1 (MVP): 104/104 теста, 85%+ покрытие
-- ✅ Упрощённая header-only аутентификация для DTS Monaco
+- ✅ Этап 1 (MVP): 104/104 теста - Базовая аутентификация, токены, проксирование
+- ✅ Этап 2 (Валюта): 148/148 теста - Система ZNC, mock payment gateway, refunds
 - ✅ Scope-based access control (full / certificates_only)
 - ✅ Health check system
 - ✅ Docker deployment (Tailscale VPN)
 
 **В разработке:**
-- ⏳ Этап 2 (Валюта): не начат
-- ⏳ Этап 3 (Мониторинг): частично (health checks реализованы)
-- ⏳ Этап 4 (Production): частично (Docker Compose, health checks)
+- ⏳ Этап 3 (Мониторинг): частично (health checks реализованы, нужны ProxySession tracking, admin endpoints)
+- ⏳ Этап 4 (Production): частично (Docker Compose готов, нужны rate limiting, CI/CD, backups)
 
 **Следующие шаги:**
-1. Завершить Этап 2 (Currency System) - добавить монетизацию
-2. Завершить Этап 3 (Monitoring) - ProxySession tracking, admin endpoints
-3. Завершить Этап 4 (Production) - rate limiting, CI/CD, load testing
-4. Рассмотреть Future Features - bundles, referrals, analytics
+1. Завершить Этап 3 (Monitoring) - ProxySession tracking, admin endpoints, audit logging
+2. Завершить Этап 4 (Production) - rate limiting, CI/CD pipeline, automated backups, load testing
+3. Рассмотреть Future Features - token bundles, referral system, usage analytics, notifications
 
 ---
 
@@ -312,4 +325,4 @@
 
 ---
 
-**Last updated:** 2025-11-11
+**Last updated:** 2025-11-14

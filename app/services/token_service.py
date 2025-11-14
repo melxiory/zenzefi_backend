@@ -346,7 +346,7 @@ class TokenService:
     @staticmethod
     def revoke_token(token_id: UUID, user_id: UUID, db: Session) -> Tuple[bool, Decimal]:
         """
-        Revoke token and calculate proportional refund.
+        Revoke token with full refund (only non-activated tokens can be revoked).
 
         Args:
             token_id: Token UUID
@@ -357,7 +357,7 @@ class TokenService:
             Tuple[bool, Decimal]: (success, refund_amount)
 
         Raises:
-            ValueError: If token not found or already revoked
+            ValueError: If token not found, already revoked, or activated
         """
         # 1. Get token with row lock
         db_token = db.query(AccessToken).filter(
@@ -369,55 +369,43 @@ class TokenService:
         if not db_token:
             raise ValueError("Token not found or already revoked")
 
-        # 2. Calculate proportional refund
+        # 2. Check if token is activated - cannot revoke activated tokens
+        if db_token.activated_at is not None:
+            raise ValueError("Cannot revoke activated token. Refunds are only available for non-activated tokens.")
+
+        # 3. Calculate full refund (token was never activated)
         now = datetime.now(timezone.utc)
-
-        if db_token.activated_at:
-            # Token was activated - calculate time used
-            activated = db_token.activated_at
-            if activated.tzinfo is None:
-                activated = activated.replace(tzinfo=timezone.utc)
-            time_used_seconds = (now - activated).total_seconds()
-            time_used_hours = time_used_seconds / 3600
-        else:
-            # Token was never activated - full refund
-            time_used_hours = 0
-
-        time_unused_hours = max(0, db_token.duration_hours - time_used_hours)
-
         cost = settings.get_token_price(db_token.duration_hours)
         if cost is None:
             cost = Decimal("0.00")
 
-        refund_amount = cost * Decimal(str(time_unused_hours / db_token.duration_hours))
-        refund_amount = refund_amount.quantize(Decimal('0.01'))  # Round to 2 decimals
+        refund_amount = cost  # 100% refund for non-activated token
 
-        # 3. Revoke token
+        # 4. Revoke token
         db_token.is_active = False
         db_token.revoked_at = now
 
-        # 4. Refund to user (with row lock)
+        # 5. Refund to user (with row lock)
         user = db.query(User).filter(User.id == user_id).with_for_update().first()
         if not user:
             raise ValueError("User not found")
 
         user.currency_balance += refund_amount
 
-        # 5. Create refund transaction (only if refund > 0)
-        if refund_amount > 0:
-            transaction = Transaction(
-                user_id=user_id,
-                amount=refund_amount,
-                transaction_type=TransactionType.REFUND,
-                description=f"Token refund: {time_unused_hours:.1f}h unused",
-                payment_id=None,
-                created_at=now
-            )
-            db.add(transaction)
+        # 6. Create refund transaction
+        transaction = Transaction(
+            user_id=user_id,
+            amount=refund_amount,
+            transaction_type=TransactionType.REFUND,
+            description=f"Token refund: {db_token.duration_hours}h (not activated)",
+            payment_id=None,
+            created_at=now
+        )
+        db.add(transaction)
 
         db.commit()
 
-        # 6. Remove from Redis cache
+        # 7. Remove from Redis cache (if it was cached)
         TokenService._remove_cached_token(db_token.token)
 
         return True, refund_amount
