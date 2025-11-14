@@ -37,6 +37,7 @@ class AccessToken(Base):
 
     # Relationships
     user = relationship("User", back_populates="tokens")
+    proxy_sessions = relationship("ProxySession", back_populates="token")
 
     @property
     def expires_at(self) -> Optional[datetime]:

@@ -33,6 +33,7 @@ class User(Base):
     # Relationships
     tokens = relationship("AccessToken", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
+    proxy_sessions = relationship("ProxySession", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User {self.username} ({self.email})>"
