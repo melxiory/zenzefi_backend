@@ -4,7 +4,7 @@ Admin schemas for administrative operations
 These schemas are used for admin-only endpoints that allow
 superusers to manage users, tokens, and other system resources.
 """
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime
 from decimal import Decimal
@@ -92,3 +92,32 @@ class AdminTokenRevokeResponse(BaseModel):
     revoked: bool
     token_id: UUID
     message: str
+
+
+# ========== Audit Log Schemas ==========
+
+class AuditLogResponse(BaseModel):
+    """Audit log entry response"""
+    id: UUID
+    user_id: Optional[UUID] = None
+    action: str
+    resource_type: str
+    resource_id: Optional[UUID] = None
+    details: Optional[Dict[str, Any]] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime
+
+    # User info (joined from user table)
+    user_email: Optional[str] = None
+    user_username: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedAuditLogsResponse(BaseModel):
+    """Paginated list of audit logs"""
+    items: List[AuditLogResponse]
+    total: int
+    limit: int
+    offset: int

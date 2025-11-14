@@ -23,6 +23,8 @@ from app.schemas.admin import (
     AdminTokenResponse,
     PaginatedTokensResponse,
     AdminTokenRevokeResponse,
+    AuditLogResponse,
+    PaginatedAuditLogsResponse,
 )
 
 __all__ = [
@@ -50,4 +52,6 @@ __all__ = [
     "AdminTokenResponse",
     "PaginatedTokensResponse",
     "AdminTokenRevokeResponse",
+    "AuditLogResponse",
+    "PaginatedAuditLogsResponse",
 ]

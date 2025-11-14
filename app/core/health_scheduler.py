@@ -9,11 +9,13 @@ from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 
 from app.config import settings
 from app.services.health_service import HealthCheckService
 from app.core.session_cleanup import cleanup_inactive_sessions
+from app.core.audit_cleanup import cleanup_old_audit_logs
 
 
 class HealthCheckScheduler:
@@ -59,6 +61,16 @@ class HealthCheckScheduler:
             max_instances=1,
         )
 
+        # Schedule audit log cleanup (daily at 3 AM)
+        self.scheduler.add_job(
+            func=cleanup_old_audit_logs,
+            trigger=CronTrigger(hour=3, minute=0),
+            id="audit_cleanup",
+            name="Old Audit Logs Cleanup (30 days retention)",
+            replace_existing=True,
+            max_instances=1,
+        )
+
         # Start scheduler
         self.scheduler.start()
 
@@ -68,6 +80,7 @@ class HealthCheckScheduler:
             f"Health check scheduler started (interval: {settings.HEALTH_CHECK_INTERVAL}s)"
         )
         logger.info("Session cleanup scheduler started (interval: 15min)")
+        logger.info("Audit cleanup scheduler started (daily at 3 AM, 30 days retention)")
 
         # Run first check immediately (non-blocking)
         asyncio.create_task(self._run_health_check())

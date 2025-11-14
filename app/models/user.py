@@ -34,6 +34,7 @@ class User(Base):
     tokens = relationship("AccessToken", back_populates="user", cascade="all, delete-orphan")
     transactions = relationship("Transaction", back_populates="user", cascade="all, delete-orphan")
     proxy_sessions = relationship("ProxySession", back_populates="user", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", back_populates="user")
 
     def __repr__(self):
         return f"<User {self.username} ({self.email})>"

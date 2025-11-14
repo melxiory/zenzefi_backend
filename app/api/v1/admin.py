@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.deps import get_current_superuser
-from app.models import User, AccessToken
+from app.models import User, AccessToken, AuditLog
 from app.services.token_service import TokenService
+from app.services.audit_service import AuditService
 from app.schemas.admin import (
     AdminUserUpdate,
     AdminUserResponse,
@@ -23,6 +24,8 @@ from app.schemas.admin import (
     AdminTokenResponse,
     PaginatedTokensResponse,
     AdminTokenRevokeResponse,
+    AuditLogResponse,
+    PaginatedAuditLogsResponse,
 )
 
 router = APIRouter()
@@ -112,21 +115,36 @@ async def update_user(
             detail="User not found"
         )
 
+    # Track changed fields for audit log
+    changed_fields = {}
+
     # Update fields if provided
     if request.is_active is not None:
+        changed_fields["is_active"] = {"old": user.is_active, "new": request.is_active}
         user.is_active = request.is_active
         logger.info(f"Admin {current_user.username} set user {user.username} is_active={request.is_active}")
 
     if request.is_superuser is not None:
+        changed_fields["is_superuser"] = {"old": user.is_superuser, "new": request.is_superuser}
         user.is_superuser = request.is_superuser
         logger.info(f"Admin {current_user.username} set user {user.username} is_superuser={request.is_superuser}")
 
     if request.currency_balance is not None:
         old_balance = user.currency_balance
+        changed_fields["currency_balance"] = {"old": float(old_balance), "new": float(request.currency_balance)}
         user.currency_balance = request.currency_balance
         logger.info(
             f"Admin {current_user.username} updated user {user.username} balance: "
             f"{old_balance} → {request.currency_balance} ZNC"
+        )
+
+    # Audit log
+    if changed_fields:
+        AuditService.log_user_update(
+            target_user_id=user.id,
+            admin_user_id=current_user.id,
+            changed_fields=changed_fields,
+            db=db,
         )
 
     db.commit()
@@ -223,6 +241,15 @@ async def force_revoke_token(
     token.is_active = False
     token.revoked_at = datetime.now(timezone.utc)
 
+    # Audit log
+    AuditService.log_token_revoke(
+        token_id=token.id,
+        user_id=current_user.id,
+        refund_amount=0.0,
+        force_revoke=True,
+        db=db,
+    )
+
     db.commit()
 
     # Remove from Redis cache
@@ -237,4 +264,66 @@ async def force_revoke_token(
         revoked=True,
         token_id=token_id,
         message=f"Token {token_id} revoked successfully (no refund issued)"
+    )
+
+
+# ========== Audit Log Management ==========
+
+@router.get("/audit-logs", response_model=PaginatedAuditLogsResponse)
+async def list_audit_logs(
+    user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
+    action: Optional[str] = Query(None, description="Filter by action type"),
+    resource_type: Optional[str] = Query(None, description="Filter by resource type"),
+    limit: int = Query(50, le=100, description="Number of logs to return"),
+    offset: int = Query(0, ge=0, description="Number of logs to skip"),
+    current_user: User = Depends(get_current_superuser),
+    db: Session = Depends(get_db),
+):
+    """
+    List audit logs (superuser only)
+
+    Query parameters:
+    - user_id: Optional filter by user ID
+    - action: Optional filter by action type (e.g., "token_purchase", "admin_user_update")
+    - resource_type: Optional filter by resource type (e.g., "AccessToken", "User")
+    - limit: Maximum number of logs to return (default: 50, max: 100)
+    - offset: Number of logs to skip for pagination
+
+    Returns:
+        Paginated list of audit logs with user information
+    """
+    query = db.query(AuditLog).outerjoin(User)
+
+    # Apply user filter
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+
+    # Apply action filter
+    if action:
+        query = query.filter(AuditLog.action == action)
+
+    # Apply resource_type filter
+    if resource_type:
+        query = query.filter(AuditLog.resource_type == resource_type)
+
+    # Get total count
+    total = query.count()
+
+    # Apply pagination and ordering (newest first)
+    audit_logs = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset).all()
+
+    # Build response with user info
+    items = []
+    for log in audit_logs:
+        log_dict = AuditLogResponse.model_validate(log).model_dump()
+        if log.user:
+            log_dict["user_email"] = log.user.email
+            log_dict["user_username"] = log.user.username
+        items.append(AuditLogResponse(**log_dict))
+
+    return PaginatedAuditLogsResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset
     )
