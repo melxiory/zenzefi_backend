@@ -4,7 +4,6 @@ In production, replace MockPaymentProvider with real gateway (YooKassa, Stripe).
 """
 import uuid
 from decimal import Decimal
-from typing import Optional
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
