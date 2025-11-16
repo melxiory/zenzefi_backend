@@ -10,6 +10,7 @@ from app.core.permissions import validate_path_access
 from app.services.token_service import TokenService
 from app.services.proxy_service import ProxyService
 from app.services.session_service import SessionService
+from app.exceptions import DeviceConflictError
 
 router = APIRouter()
 
@@ -120,6 +121,27 @@ async def proxy_to_zenzefi(
     Raises:
         HTTPException: 401 if token is invalid or expired
     """
+    # ============ DEVICE IDENTIFICATION ============
+    # Extract X-Device-ID header (обязателен для device conflict detection)
+    device_id = request.headers.get("x-device-id")
+
+    if not device_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Device identification required: X-Device-ID header missing. "
+                "Please update your Desktop Client to the latest version."
+            ),
+        )
+
+    # Базовая валидация device_id
+    if len(device_id) < 8 or len(device_id) > 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid X-Device-ID header format (must be 8-255 characters)",
+        )
+
+    # ============ AUTHENTICATION ============
     # Check if token is provided
     if not x_access_token:
         raise HTTPException(
@@ -163,7 +185,7 @@ async def proxy_to_zenzefi(
     )
     # ============ END SCOPE VALIDATION ============
 
-    # Track proxy session
+    # ============ SESSION TRACKING WITH DEVICE CONFLICT DETECTION ============
     ip_address = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent")
 
@@ -171,9 +193,20 @@ async def proxy_to_zenzefi(
         SessionService.track_request(
             user_id=user_id,
             token_id=token_id,
+            device_id=device_id,
             ip_address=ip_address,
             user_agent=user_agent,
             db=db
+        )
+    except DeviceConflictError as e:
+        # DEVICE CONFLICT - токен используется на другом устройстве
+        logger.warning(
+            f"Device conflict detected: token={token_id}, "
+            f"attempted_device={device_id[:16]}..., error={str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
         )
     except Exception as e:
         # Don't fail the request if session tracking fails

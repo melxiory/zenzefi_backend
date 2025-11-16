@@ -51,12 +51,12 @@ class HealthCheckScheduler:
             max_instances=1,  # Only one check at a time
         )
 
-        # Schedule session cleanup (every 15 minutes)
+        # Schedule session cleanup (every 2 minutes for 5-minute timeout)
         self.scheduler.add_job(
             func=cleanup_inactive_sessions,
-            trigger=IntervalTrigger(minutes=15),
+            trigger=IntervalTrigger(minutes=2),
             id="session_cleanup",
-            name="Inactive Session Cleanup",
+            name="Session Cleanup (5min timeout)",
             replace_existing=True,
             max_instances=1,
         )
@@ -79,7 +79,7 @@ class HealthCheckScheduler:
         logger.info(
             f"Health check scheduler started (interval: {settings.HEALTH_CHECK_INTERVAL}s)"
         )
-        logger.info("Session cleanup scheduler started (interval: 15min)")
+        logger.info("Session cleanup scheduler started (interval: 2min, timeout: 5min)")
         logger.info("Audit cleanup scheduler started (daily at 3 AM, 30 days retention)")
 
         # Run first check immediately (non-blocking)
