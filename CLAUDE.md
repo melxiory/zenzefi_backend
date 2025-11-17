@@ -13,27 +13,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between applications (like DTS Monaco) and the target server, enabling monetization through token-based access control.
+**Zenzefi Backend** - Production-ready authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens with ZNC currency monetization system. The server acts as an intermediary between applications (like DTS Monaco) and the target server.
 
-**Current Status:** v0.5.0-beta - Device conflict detection implemented ("1 token = 1 device" policy). All core authentication, token generation, proxy functionality, scope-based access control, device conflict detection, and monetization features tested (156/156 tests passing, 85%+ code coverage).
+**Current Status:** v0.6.0-beta - ✅ **PRODUCTION-READY**. All 4 development phases completed. Full authentication, token management, monetization (ZNC currency), device conflict detection, admin tools, rate limiting, CI/CD pipeline, and monitoring systems operational (174/174 tests passing, 85%+ code coverage).
 
 **Phase Status:**
 - ✅ Phase 1 (MVP): Core authentication, tokens, HTTP proxy, health checks - COMPLETED
 - ✅ Phase 2 (Currency System): ZNC balance, transactions, payment gateway, refunds - COMPLETED
-- ✅ Phase 3 (Monitoring): ProxySession tracking with device conflict detection, session timeout - COMPLETED
-- ⏳ Phase 4 (Production): Rate limiting, CI/CD, backups - PARTIALLY (Docker deployment done)
+- ✅ Phase 3 (Monitoring): ProxySession tracking, device conflicts, admin endpoints, audit logging - COMPLETED
+- ✅ Phase 4 (Production): Rate limiting, CI/CD, Prometheus metrics, backups, load testing - COMPLETED
 
 ## Tech Stack
 
 - **Python 3.13+** - Runtime environment
 - **FastAPI 0.119+** - Async web framework
 - **PostgreSQL 15+** - Primary database (SQLAlchemy 2.0 ORM)
-- **Redis 7+** - Token caching, sessions, health check results
+- **Redis 7+** - Token caching, sessions, rate limiting, health check results
 - **Alembic** - Database migrations
 - **Pydantic v2** - Data validation
 - **PyJWT** - JWT tokens for API authentication
-- **APScheduler** - Background tasks for health checks (50s interval)
-- **pytest** - Testing framework with real PostgreSQL and Redis
+- **APScheduler** - Background tasks (health checks, session cleanup, audit cleanup)
+- **pytest** - Testing framework with real PostgreSQL and Redis (174 tests)
+- **Prometheus** - Metrics and monitoring (/metrics endpoint)
+- **Locust** - Load testing and performance validation
 - **Poetry** - Dependency management
 
 ## Quick Start
@@ -427,7 +429,7 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 161 tests, 85%+ coverage
+**Test organization:** 174 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
 - `test_token_service.py` - Token generation, caching, revoke (21 tests)
@@ -443,10 +445,13 @@ Project uses **Pydantic v2**:
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
 - `test_health_service.py` - Health check service (15 tests)
 - `test_proxy_session.py` - ProxySession tracking, device conflicts (13 tests) *Phase 3*
-- `test_main.py` - Health checks, CORS, routing (9 tests)
+- `test_rate_limit.py` - Rate limiting middleware (8 tests) *Phase 4*
+- `test_main.py` - Health checks, CORS, routing, metrics (12 tests)
 
 **Phase 2 Tests Added:** 44 new tests (currency, payment, token purchase integration)
 **Phase 3 Tests Added:** 13 new tests (ProxySession tracking, device conflict detection)
+**Phase 4 Tests Added:** 13 new tests (rate limiting, metrics, version check)
+**Load Testing:** Locust suite in `tests/load/` (realistic user workflows, performance validation)
 
 **See [TESTING.md](./docs/claude/TESTING.md) for detailed testing guide.**
 
@@ -461,7 +466,7 @@ MCP servers configured in `.mcp.json`:
 ## Notes for Claude Code
 
 **Critical Information:**
-- All tests must pass before considering work complete (148 tests as of Phase 2)
+- All tests must pass before considering work complete (174 tests as of v0.6.0-beta)
 - Use real Redis and PostgreSQL for integration testing (configured in `conftest.py`)
 - Token validation uses two-tier caching: Redis (fast) → PostgreSQL (fallback)
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens
@@ -493,6 +498,15 @@ MCP servers configured in `.mcp.json`:
 - **Security:** Proxy requests without X-Device-ID → 403 Forbidden (Desktop Client upgrade required)
 - **Session reuse:** Same device can reconnect after timeout (device_id matches)
 - **IP changes allowed:** Same device can switch IPs (VPN, Wi-Fi) without conflict
+
+**Phase 4 (Production Readiness) - Completed:**
+- **Rate Limiting Middleware:** Redis-based sliding window (auth: 5/hour, api: 100/min, proxy: 1000/min)
+- **CI/CD Pipeline:** GitHub Actions workflows (test.yml, deploy.yml) with PostgreSQL/Redis services
+- **Prometheus Metrics:** `/metrics` endpoint with counters, gauges, histograms (active_tokens, requests, latency)
+- **Automated Backups:** Daily PostgreSQL backup script + cron job (30-day retention, optional S3 upload)
+- **Load Testing Suite:** Locust tests in `tests/load/` (realistic workflows, performance targets: 1000 req/s, p95 < 200ms)
+- **174 tests passing** with real services, 85%+ code coverage
+- **File:** `app/middleware/rate_limit.py`, `app/api/v1/metrics.py`, `scripts/backup_database.sh`, `tests/load/locustfile.py`
 
 **When writing code:**
 - Follow existing patterns in codebase

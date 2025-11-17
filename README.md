@@ -1,17 +1,23 @@
 # Zenzefi Backend
 
-Сервер аутентификации и проксирования для контроля доступа к Zenzefi (Windows 11) по временным токенам.
+**Production-Ready** сервер аутентификации и проксирования для контроля доступа к Zenzefi (Windows 11) с системой монетизации через внутреннюю валюту ZNC.
+
+**Версия:** v0.6.0-beta
+**Статус:** ✅ Production-Ready (все 4 этапа завершены)
 
 ## Технологический стек
 
 - **Python 3.13+** - Runtime environment
-- **FastAPI 0.119+** - Async web framework с поддержкой HTTP/WebSocket
+- **FastAPI 0.119+** - Async web framework
 - **PostgreSQL 15+** - Основная БД (SQLAlchemy 2.0 ORM)
-- **Redis 7+** - Двухуровневый кэш токенов, управление сессиями
+- **Redis 7+** - Кэширование токенов, сессий, rate limiting
 - **Alembic** - Миграции БД
 - **Pydantic v2** - Валидация данных
 - **PyJWT** - JWT токены для API аутентификации (HS256)
-- **pytest** - Тестирование с реальными сервисами (85 тестов, 85%+ покрытие)
+- **pytest** - Тестирование с реальными сервисами (174 теста, 85%+ покрытие)
+- **Prometheus** - Метрики и мониторинг
+- **Locust** - Load testing
+- **APScheduler** - Background tasks (health checks, session cleanup)
 - **Uvicorn** - ASGI сервер
 
 ## Быстрый старт
@@ -157,7 +163,30 @@ poetry run pytest tests/ -n auto
 - Тесты требуют запущенных PostgreSQL и Redis (через `docker-compose.dev.yml`)
 - Используется отдельная БД `zenzefi_test` (создаётся автоматически скриптом)
 - Тесты используют **реальные сервисы**, не моки
-- 85 тестов, 85%+ покрытие кода
+- **174 теста, 85%+ покрытие кода**
+
+### Load Testing
+
+```bash
+# Запуск load testing (Interactive mode с Web UI)
+locust -f tests/load/locustfile.py --host http://localhost:8000
+# Открыть http://localhost:8089
+
+# Headless mode (автоматический запуск)
+locust -f tests/load/locustfile.py \
+    --host http://localhost:8000 \
+    --users 100 \
+    --spawn-rate 10 \
+    --run-time 5m \
+    --headless \
+    --html report.html
+```
+
+**Performance Targets:**
+- Throughput: 1000 req/s
+- p50 latency: < 50ms
+- p95 latency: < 200ms
+- Error rate: < 0.1%
 
 ### Код-стайл
 
@@ -188,32 +217,48 @@ poetry run mypy app/
 
 ### Access Tokens (`/api/v1/tokens`)
 
-- `POST /purchase` - Создать токен доступа (требуется JWT, MVP: бесплатно)
-  - Body: `{"duration_hours": 1|12|24|168|720}`
+- `POST /purchase` - Создать токен доступа (требуется JWT, стоимость в ZNC)
+  - Body: `{"duration_hours": 1|12|24|168|720, "scope": "full|certificates_only"}`
+  - Cost: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
   - Returns: TokenResponse с token string
 - `GET /my-tokens?active_only=true` - Получить список токенов пользователя (требуется JWT)
   - Query param: `active_only` (по умолчанию: true)
+- `DELETE /{token_id}` - Отозвать токен с пропорциональным возвратом ZNC (требуется JWT)
+
+### Currency (`/api/v1/currency`)
+
+- `GET /balance` - Получить текущий баланс ZNC (требуется JWT)
+- `GET /transactions` - История транзакций с пагинацией (требуется JWT)
+  - Query params: `skip`, `limit`, `transaction_type`
+- `POST /mock-purchase` - Mock пополнение баланса (тестирование, требуется JWT)
+  - Body: `{"amount": 100}`
+- `POST /purchase` - Создать платёж для пополнения ZNC (requires JWT)
+  - Body: `{"amount": 100}`
+  - Returns: Payment URL для оплаты
+
+### Admin (`/api/v1/admin`)
+
+- `GET /users` - Список всех пользователей (требуется superuser)
+  - Query params: `skip`, `limit`, `search`, `is_active`
+- `PATCH /users/{user_id}` - Обновить пользователя (требуется superuser)
+  - Body: `{"currency_balance": 500, "is_active": true}`
+- `GET /tokens` - Список токенов по user_id (требуется superuser)
+- `DELETE /tokens/{token_id}` - Force revoke без refund (требуется superuser)
 
 ### Proxy (`/api/v1/proxy`)
 
-**Аутентификация через Cookie:**
-- `POST /authenticate` - Установить cookie аутентификации
-  - Body: `{"token": "access_token_string"}`
-  - Валидирует токен и устанавливает `zenzefi_access_token` cookie
-  - Returns: `{"user_id": "uuid", "token_id": "uuid", "expires_at": "timestamp"}`
 - `GET /status` - Проверить статус аутентификации
-  - Требует: `zenzefi_access_token` cookie
-  - Returns: Статус текущего токена и информацию об истечении
-- `DELETE /logout` - Удалить cookie аутентификации
-  - Returns: `{"message": "Logged out successfully"}`
-
-**Проксирование запросов:**
+  - Headers: `X-Access-Token`, `X-Device-ID` (обязательно)
+  - Returns: Статус токена и информация о сессии
 - `ALL /{path:path}` - Проксирование HTTP запроса к Zenzefi
-  - Auth: Cookie (`zenzefi_access_token`) ИЛИ Header (`X-Access-Token`)
-  - Валидирует аутентификацию, пересылает на Zenzefi с X-Access-Token
-- `WS /{path:path}` - Проксирование WebSocket соединения
-  - Auth: Query param `?token=<access_token>` ИЛИ Cookie
-  - Токен валидируется перед установкой соединения
+  - Headers: `X-Access-Token`, `X-Device-ID` (обязательно)
+  - Валидирует токен, device conflict detection, scope permissions
+  - Пересылает запрос на Zenzefi server
+
+### Health & Metrics
+
+- `GET /health` - Простая проверка здоровья (~1ms из Redis)
+- `GET /metrics` - Prometheus metrics (counters, gauges, histograms)
 
 ## Структура проекта
 
@@ -293,14 +338,16 @@ zenzefi_backend/
 
 ## Архитектура
 
-### Поток запросов (Desktop Client + Browser)
+### Поток запросов (Desktop Client)
 
 ```
-[Browser] → [Local Proxy (HTTPS)] → [FastAPI Backend] → [Zenzefi Server]
-   Cookie         SSL Termination      Cookie Validation     X-Access-Token
-                                       Token Validation
-                                             ↓
-                                      [PostgreSQL] + [Redis Cache]
+[Desktop Client] → [FastAPI Backend] → [Zenzefi Server]
+  X-Access-Token     Token Validation    Proxy Request
+  X-Device-ID        Device Conflict
+                     Check Session
+                           ↓
+                    [PostgreSQL] + [Redis Cache]
+                    ProxySession tracking
 ```
 
 ### Два типа токенов
@@ -313,48 +360,83 @@ zenzefi_backend/
    - Истекают через 60 минут (настраивается через `ACCESS_TOKEN_EXPIRE_MINUTES`)
 
 2. **Access Tokens** - Для проксирования к Zenzefi серверу
-   - Генерируются через `/api/v1/tokens/purchase` (требуется JWT auth)
+   - Генерируются через `/api/v1/tokens/purchase` (требуется JWT auth, стоимость в ZNC)
    - Формат: 64-символьная URL-safe случайная строка (`secrets.token_urlsafe(48)`)
    - НЕ JWT - простые случайные токены в PostgreSQL
    - Допустимые длительности: 1, 12, 24, 168 (неделя), 720 (месяц) часов
+   - Scope: `full` (все endpoints) или `certificates_only` (только /certificates/*)
    - Двухуровневая валидация: Redis кэш (~1мс) → PostgreSQL (~10мс)
+   - **"1 token = 1 device" policy:** Device conflict detection через X-Device-ID header
 
 ### Методы аутентификации
 
 1. **JWT Authentication** - Для API endpoints (Authorization: Bearer token)
-2. **Cookie Authentication** - Для desktop client браузера (zenzefi_access_token cookie)
+2. **X-Access-Token Header** - Для proxy requests (с обязательным X-Device-ID)
 
-## MVP Features (Этап 1) ✅
+## ✅ Реализованные возможности
 
+### Phase 1: MVP ✅ ЗАВЕРШЁН (v0.3.0-beta)
+
+**Базовая функциональность:**
 - ✅ Регистрация и аутентификация пользователей (JWT)
 - ✅ JWT токены для API доступа (60 минут lifetime)
-- ✅ Создание токенов доступа (бесплатно для MVP)
-- ✅ Двухуровневое кэширование токенов (Redis + PostgreSQL)
-- ✅ Cookie-based аутентификация для Desktop Client
-- ✅ HTTP и WebSocket проксирование к Zenzefi серверу
-- ✅ Content rewriting (URL перезапись в HTML/CSS/JS)
-- ✅ 85 тестов с реальными сервисами (85%+ покрытие)
+- ✅ Создание access tokens (64-char random strings)
+- ✅ Двухуровневое кэширование токенов (Redis ~1ms → PostgreSQL ~10ms)
+- ✅ HTTP проксирование к Zenzefi серверу
+- ✅ Scope-based access control (full / certificates_only)
+- ✅ Health check system (PostgreSQL, Redis, Zenzefi)
+- ✅ Background scheduler (APScheduler)
 - ✅ MCP серверы (PostgreSQL, Docker, Redis, API)
 
-## Следующие этапы
+### Phase 2: Система валюты ✅ ЗАВЕРШЁН (v0.4.0-beta)
 
-### Этап 2: Система валюты (TODO)
-- Внутренняя валюта (ZNC - Zenzefi Credits)
-- Пополнение баланса
-- Покупка токенов за валюту
-- История транзакций
-- Система возврата средств
+**Монетизация:**
+- ✅ Внутренняя валюта ZNC (Zenzefi Credits)
+- ✅ Transaction model (DEPOSIT, PURCHASE, REFUND types)
+- ✅ Mock payment gateway (YooKassa/Stripe в production)
+- ✅ Покупка токенов за ZNC (1h=1, 12h=10, 24h=18, 7d=100, 30d=300 ZNC)
+- ✅ Пропорциональный refund при revoke токена
+- ✅ Currency API endpoints (balance, transactions, purchase)
+- ✅ Webhook handler для payment gateway
 
-### Этап 3: Мониторинг (TODO)
-- Трекинг proxy сессий
-- Admin endpoints
-- Метрики и логирование
+### Phase 3: Мониторинг ✅ ЗАВЕРШЁН (v0.5.0-beta)
 
-### Этап 4: Production (TODO)
-- Nginx с SSL
-- Rate limiting
-- CORS configuration
-- CI/CD pipeline
+**Трекинг и управление:**
+- ✅ ProxySession tracking (IP, user_agent, bytes, requests)
+- ✅ Device conflict detection ("1 token = 1 device" policy)
+- ✅ Session timeout (5 минут inactivity, auto-cleanup каждые 2 минуты)
+- ✅ Admin API endpoints (users, tokens management)
+- ✅ Audit logging system (actions, resources, IP tracking)
+- ✅ Health checks с background scheduler (50s interval)
+
+### Phase 4: Production Readiness ✅ ЗАВЕРШЁН (v0.6.0-beta)
+
+**Production инфраструктура:**
+- ✅ Rate Limiting middleware (Redis sliding window, 3 limit types)
+- ✅ CI/CD Pipeline (GitHub Actions: test + deploy workflows)
+- ✅ Prometheus metrics endpoint (/metrics с counters, gauges, histograms)
+- ✅ Automated backups (PostgreSQL daily backup + restore scripts)
+- ✅ Load testing suite (Locust с realistic user workflows)
+- ✅ 174 теста с реальными сервисами (85%+ покрытие)
+
+**Итого:** ✅ Все 4 этапа завершены, система готова к production deployment!
+
+## 💡 Будущие возможности (Optional)
+
+### Phase 2.5: Token Bundles & Referrals
+- Пакетные предложения со скидками
+- Реферальная система с бонусами
+- GET /api/v1/bundles, POST /api/v1/bundles/{id}/purchase
+
+### Phase 3.5: Usage Analytics
+- Статистика использования по пользователям
+- Global stats для админов
+- Period filtering (day, week, month)
+
+### Phase 4.5: Notification System
+- Email notifications (token expiring, balance low)
+- Webhook notifications с HMAC verification
+- Background notification tasks
 
 ## Production Deployment
 
