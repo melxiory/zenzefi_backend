@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Application
     PROJECT_NAME: str = "Zenzefi Backend"
-    VERSION: str = "0.4.1-beta"
+    VERSION: str = "0.5.0-beta"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 

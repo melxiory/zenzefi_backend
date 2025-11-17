@@ -102,6 +102,7 @@ def client(test_db: Session, fake_redis, monkeypatch) -> Generator[TestClient, N
     # Mock Redis client to use fake Redis - using monkeypatch for duration of test
     monkeypatch.setattr('app.core.redis.get_redis_client', lambda: fake_redis)
     monkeypatch.setattr('app.services.token_service.get_redis_client', lambda: fake_redis)
+    monkeypatch.setattr('app.middleware.rate_limit.get_redis_client', lambda: fake_redis)
 
     with TestClient(app) as test_client:
         yield test_client

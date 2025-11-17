@@ -70,9 +70,7 @@ services:
 
   # Backend API
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: melxiory/zenzefi-backend:main
     container_name: zenzefi-backend
     restart: always
     env_file:

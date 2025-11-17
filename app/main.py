@@ -9,6 +9,7 @@ from app.core.health_scheduler import start_health_scheduler, shutdown_health_sc
 from app.api.v1 import api_router
 from app.services.health_service import HealthCheckService
 from app.schemas.health import HealthResponse, SimpleHealthResponse
+from app.middleware import RateLimitMiddleware
 
 # Setup logging
 setup_logging()
@@ -39,6 +40,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Rate Limiting middleware - Phase 4 Production Readiness
+app.add_middleware(RateLimitMiddleware)
 
 
 # Startup event

@@ -1,0 +1,86 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: zenzefi_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: zenzefi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          poetry install
+
+      - name: Run database migrations
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_USER: zenzefi_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: zenzefi_test
+          REDIS_HOST: localhost
+          SECRET_KEY: test-secret-key-for-ci-only
+        run: |
+          poetry run alembic upgrade head
+
+      - name: Run tests with coverage
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_USER: zenzefi_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: zenzefi_test
+          REDIS_HOST: localhost
+          SECRET_KEY: test-secret-key-for-ci-only
+          ZENZEFI_TARGET_URL: https://test-zenzefi-server
+        run: |
+          poetry run pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
