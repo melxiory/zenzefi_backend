@@ -130,7 +130,10 @@ class TestTokenScopeValidation:
         for path in paths:
             response = client.get(
                 f"/api/v1/proxy/{path}",
-                headers={"X-Access-Token": token.token}
+                headers={
+                    "X-Access-Token": token.token,
+                    "X-Device-ID": "test-device-12345678"
+                }
             )
             # May be 502 (proxy error) but NOT 403 (forbidden)
             assert response.status_code != 403, f"Full scope should allow {path}"
@@ -168,7 +171,10 @@ class TestTokenScopeValidation:
         for path in certificate_paths:
             response = client.get(
                 f"/api/v1/proxy/{path}",
-                headers={"X-Access-Token": token.token}
+                headers={
+                    "X-Access-Token": token.token,
+                    "X-Device-ID": "test-device-12345678"
+                }
             )
             # May be 502 (proxy error) but NOT 403 (forbidden)
             assert response.status_code != 403, f"Should allow {path}"
@@ -206,7 +212,10 @@ class TestTokenScopeValidation:
         for path in blocked_paths:
             response = client.get(
                 f"/api/v1/proxy/{path}",
-                headers={"X-Access-Token": token.token}
+                headers={
+                    "X-Access-Token": token.token,
+                    "X-Device-ID": "test-device-12345678"
+                }
             )
             assert response.status_code == 403, f"Should block {path}"
             assert "does not allow access" in response.json()["detail"]
