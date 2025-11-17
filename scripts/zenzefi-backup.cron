@@ -1,0 +1,18 @@
+# Zenzefi Backup Cron Job
+#
+# Runs PostgreSQL database backup daily at 3:00 AM
+# Logs output to /var/log/zenzefi-backup.log
+#
+# Installation:
+#   sudo cp scripts/zenzefi-backup.cron /etc/cron.d/zenzefi-backup
+#   sudo chmod 644 /etc/cron.d/zenzefi-backup
+#
+# Manual trigger (for testing):
+#   sudo /opt/zenzefi-backend/scripts/backup_database.sh
+#
+
+# Daily backup at 3:00 AM
+0 3 * * * root /opt/zenzefi-backend/scripts/backup_database.sh >> /var/log/zenzefi-backup.log 2>&1
+
+# Weekly cleanup of old logs (keep 90 days)
+0 4 * * 0 root find /var/log/zenzefi-backup.log -mtime +90 -delete

@@ -7,6 +7,7 @@ from app.core.logging import setup_logging
 from app.core.redis import get_redis_client, close_redis_client
 from app.core.health_scheduler import start_health_scheduler, shutdown_health_scheduler
 from app.api.v1 import api_router
+from app.api.v1.metrics import router as metrics_router
 from app.services.health_service import HealthCheckService
 from app.schemas.health import HealthResponse, SimpleHealthResponse
 from app.middleware import RateLimitMiddleware
@@ -145,5 +146,8 @@ async def root():
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+
+# Include metrics router (at root level, not under /api/v1)
+app.include_router(metrics_router)
 
 logger.info(f"{settings.PROJECT_NAME} initialized")

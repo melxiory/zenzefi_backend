@@ -10,12 +10,12 @@
 |------|--------|-------|----------|
 | [Этап 1: MVP](./PHASE_1_MVP.md) | ✅ **ЗАВЕРШЁН** | 2-3 недели | Базовая аутентификация, токены, HTTP проксирование |
 | [Этап 2: Валюта](./PHASE_2_CURRENCY.md) | ✅ **ЗАВЕРШЁН** | 5-7 дней | Внутренняя валюта ZNC, payment gateway, refund system |
-| [Этап 3: Мониторинг](./PHASE_3_MONITORING.md) | ⏳ Частично | 3-5 дней | ProxySession tracking, admin endpoints, audit logging |
-| [Этап 4: Production](./PHASE_4_PRODUCTION.md) | ⏳ Частично | 4-6 дней | Rate limiting, CI/CD, backups, load testing |
+| [Этап 3: Мониторинг](./PHASE_3_MONITORING.md) | ✅ **ЗАВЕРШЁН** | 3-5 дней | ProxySession tracking, device conflict detection, health checks |
+| [Этап 4: Production](./PHASE_4_PRODUCTION.md) | ✅ **ЗАВЕРШЁН** | 4 дня | Rate limiting, CI/CD, Prometheus metrics, backups, load testing |
 | [Future Features](./PHASE_FUTURE.md) | 💡 Идеи | 10-15 дней | Token bundles, referrals, analytics, notifications |
 
-**Общее время разработки:** 25-36 дней (основные этапы 1-4)
-**Завершено:** Этапы 1-2 (базовый функционал + монетизация)
+**Общее время разработки:** 21-30 дней (основные этапы 1-4)
+**Завершено:** ✅ Этапы 1-4 (MVP → Валюта → Мониторинг → Production)
 
 ---
 
@@ -170,52 +170,50 @@
 
 ---
 
-## Этап 4: Production Readiness ⏳ ЧАСТИЧНО РЕАЛИЗОВАНО
+## Этап 4: Production Readiness ✅ ЗАВЕРШЁН
 
+**Версия:** v0.6.0-beta (November 2025)
 **Зависимости:** Этапы 2-3 завершены
-**Время:** 4-6 дней
+**Время выполнения:** 4 дня (по плану: 4-6 дней)
 
 ### Цель
 
 Подготовить систему к production deployment с полным набором инфраструктурных компонентов.
 
-### Что уже реализовано (из Этапа 1)
+### Реализовано
 
-- ✅ Docker Compose production (docker-compose.yml)
-- ✅ Healthchecks для сервисов (PostgreSQL, Redis)
-- ✅ OpenAPI/Swagger (/docs, /redoc)
-- ✅ Deployment guide (docs/DEPLOYMENT_TAILSCALE.md)
-
-### Основные задачи
-
-**1. Rate Limiting** (1-2 дня)
-- Redis-based sliding window rate limiter
+**✅ Rate Limiting Middleware:**
+- Redis-based sliding window algorithm
 - 3 типа лимитов: auth (5/hour), api (100/min), proxy (1000/min)
 - Bypass для superusers
+- Файл: `app/middleware/rate_limit.py`
 
-**2. CI/CD Pipeline** (1 день)
-- GitHub Actions: test workflow (pytest, coverage)
-- GitHub Actions: deploy workflow (Docker build, push, SSH deploy)
-- Codecov integration
+**✅ CI/CD Pipeline:**
+- GitHub Actions workflows: test.yml, deploy.yml
+- Automated testing (pytest + coverage)
+- Docker build & deploy to production
+- Codecov integration (optional)
 
-**3. Backup Automation** (1 день)
-- PostgreSQL backup script (cron, daily at 3 AM)
-- S3/Backblaze upload (optional)
-- Restore script
-- Retention policy (30 days)
+**✅ Prometheus Metrics:**
+- Endpoint: `GET /metrics`
+- Counters: proxy_requests, auth_attempts, token_purchases, etc.
+- Gauges: active_tokens, active_sessions, total_users
+- Histograms: proxy_latency, db_query_duration, redis_operation_duration
+- Файл: `app/api/v1/metrics.py`
 
-**4. Load Testing** (1-2 дня)
-- Locust test suite
-- Performance benchmarks (1000 req/s, p95 < 200ms)
-- Optimization recommendations
+**✅ Automated Backups:**
+- PostgreSQL backup/restore scripts
+- Cron job (daily at 3 AM)
+- 30-day retention policy
+- Optional S3/Backblaze upload
+- Файлы: `scripts/backup_database.sh`, `scripts/restore_backup.sh`, `scripts/zenzefi-backup.cron`
 
-**5. SSL/TLS Configuration** (опционально)
-- Nginx with Let's Encrypt (если не Tailscale)
-- Security headers, rate limiting
-
-**6. Monitoring Integration** (1 день)
-- Prometheus + Grafana docker-compose
-- Grafana dashboards для FastAPI metrics
+**✅ Load Testing Suite:**
+- Locust тесты с realistic workflows
+- ZenzefiUser: registration → login → balance → tokens
+- ProxyUser: proxy endpoint testing
+- Performance targets: 1000 req/s, p95 < 200ms
+- Файлы: `tests/load/locustfile.py`, `tests/load/README.md`
 
 **См. подробности:** [PHASE_4_PRODUCTION.md](./PHASE_4_PRODUCTION.md)
 
@@ -267,26 +265,34 @@
 
 ---
 
-## Текущий статус (v0.4.0-beta)
+## Текущий статус (v0.6.0-beta)
 
-**Версия:** 0.4.0-beta
-**Дата:** 2025-11-14
+**Версия:** 0.6.0-beta
+**Дата:** 2025-11-17
 
 **Завершено:**
-- ✅ Этап 1 (MVP): 104/104 теста - Базовая аутентификация, токены, проксирование
-- ✅ Этап 2 (Валюта): 148/148 теста - Система ZNC, mock payment gateway, refunds
+- ✅ **Этап 1 (MVP):** 104/104 теста - Базовая аутентификация, токены, проксирование
+- ✅ **Этап 2 (Валюта):** 148/148 теста - Система ZNC, mock payment gateway, refunds
+- ✅ **Этап 3 (Мониторинг):** 156/156 теста - ProxySession tracking, device conflict detection, health checks
+- ✅ **Этап 4 (Production):** Rate limiting, CI/CD, Prometheus metrics, backups, load testing
 - ✅ Scope-based access control (full / certificates_only)
-- ✅ Health check system
+- ✅ Device conflict detection ("1 token = 1 device" policy)
+- ✅ Health check system (PostgreSQL, Redis, Zenzefi)
 - ✅ Docker deployment (Tailscale VPN)
 
-**В разработке:**
-- ⏳ Этап 3 (Мониторинг): частично (health checks реализованы, нужны ProxySession tracking, admin endpoints)
-- ⏳ Этап 4 (Production): частично (Docker Compose готов, нужны rate limiting, CI/CD, backups)
+**Production-Ready Features:**
+- ✅ 156 tests passing, 85%+ code coverage
+- ✅ CI/CD pipeline (GitHub Actions)
+- ✅ Automated backups (daily cron job)
+- ✅ Rate limiting (Redis-based)
+- ✅ Prometheus metrics (/metrics endpoint)
+- ✅ Load testing suite (Locust)
 
-**Следующие шаги:**
-1. Завершить Этап 3 (Monitoring) - ProxySession tracking, admin endpoints, audit logging
-2. Завершить Этап 4 (Production) - rate limiting, CI/CD pipeline, automated backups, load testing
-3. Рассмотреть Future Features - token bundles, referral system, usage analytics, notifications
+**Следующие шаги (опционально):**
+1. ⏳ Future Features (Phase 2.5-4.5) - token bundles, referrals, analytics, notifications
+2. ⏳ Optimization - database query optimization, caching improvements
+3. ⏳ Security hardening - OWASP compliance, security audit
+4. ⏳ Monitoring dashboard - Grafana setup, custom dashboards
 
 ---
 

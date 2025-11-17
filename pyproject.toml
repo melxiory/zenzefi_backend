@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "zenzefi-backend"
-version = "0.5.0-beta"
-description = "Zenzefi Backend - Authentication and Proxy Server"
+version = "0.6.0-beta"
+description = "Zenzefi Backend - Authentication and Proxy Server (Production Ready)"
 authors = ["melxiory <sibagatullinnail@gmail.com>"]
 readme = "README.md"
 packages = [{include = "app"}]
