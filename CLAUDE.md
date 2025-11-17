@@ -15,12 +15,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between applications (like DTS Monaco) and the target server, enabling monetization through token-based access control.
 
-**Current Status:** v0.4.0-beta - Full currency system (ZNC) with mock payment gateway implemented. All core authentication, token generation, proxy functionality, scope-based access control, and monetization features tested (148/148 tests passing, 85%+ code coverage).
+**Current Status:** v0.5.0-beta - Device conflict detection implemented ("1 token = 1 device" policy). All core authentication, token generation, proxy functionality, scope-based access control, device conflict detection, and monetization features tested (156/156 tests passing, 85%+ code coverage).
 
 **Phase Status:**
 - ✅ Phase 1 (MVP): Core authentication, tokens, HTTP proxy, health checks - COMPLETED
 - ✅ Phase 2 (Currency System): ZNC balance, transactions, payment gateway, refunds - COMPLETED
-- ⏳ Phase 3 (Monitoring): ProxySession tracking, admin endpoints - PARTIALLY (health checks done)
+- ✅ Phase 3 (Monitoring): ProxySession tracking with device conflict detection, session timeout - COMPLETED
 - ⏳ Phase 4 (Production): Rate limiting, CI/CD, backups - PARTIALLY (Docker deployment done)
 
 ## Tech Stack
@@ -61,8 +61,10 @@ poetry run alembic revision --autogenerate -m "Description"
 ```
 [Application] → [FastAPI Backend] → [Zenzefi Server]
 (DTS Monaco)    X-Access-Token      Token Validation
+                + X-Device-ID       + Device Conflict Check
                 Header Auth                ↓
                                     [PostgreSQL] + [Redis Cache]
+                                    ProxySession tracking
 ```
 
 **Two Token Types:**
@@ -71,7 +73,15 @@ poetry run alembic revision --autogenerate -m "Description"
 
 **Authentication Method:**
 - **X-Access-Token Header** - For all proxy requests to Zenzefi server
+- **X-Device-ID Header** - Device identifier for "1 token = 1 device" enforcement
 - **JWT Authentication** - For API endpoints (`Authorization: Bearer token`)
+
+**Device Conflict Detection (v0.5.0+):**
+- Each access token can only be used from one device at a time
+- Desktop Client sends hardware-based device_id (20-char hash)
+- Backend tracks active sessions per token with device_id
+- Attempting to use token from different device → 409 Conflict
+- Session timeout: 5 minutes of inactivity (auto-cleanup every 2 minutes)
 
 ### Layer Architecture
 
@@ -142,6 +152,15 @@ app/
 - amount: positive for deposit/refund, negative for purchase
 - payment_id: External payment gateway transaction ID (optional, for tracking)
 - Relationship: user (many-to-one with User)
+
+**ProxySession** (`app/models/proxy_session.py`) - *Added in Phase 3*:
+- Fields: id (UUID), user_id (FK), token_id (FK), device_id (String 255), ip_address (INET), user_agent, started_at, last_activity, ended_at, bytes_transferred, request_count, is_active
+- `device_id` - Hardware-based device identifier (20-char hash from Desktop Client)
+- `is_active` - Boolean flag for active sessions (indexed)
+- `last_activity` - Timestamp of last request (indexed for cleanup)
+- Relationships: user (many-to-one), token (many-to-one), both with cascade delete
+- **Session timeout:** 5 minutes of inactivity (auto-cleanup every 2 minutes)
+- **Device conflict detection:** Only one device_id can use a token at a time
 
 ### Redis Cache Structure
 
@@ -325,7 +344,36 @@ SCOPE_PERMISSIONS = {
 
 ### Proxy (`/api/v1/proxy`)
 - `GET /status` - Check authentication status (requires `X-Access-Token` header)
-- `ALL /{path:path}` - Proxy HTTP request to Zenzefi (requires `X-Access-Token` header)
+- `ALL /{path:path}` - Proxy HTTP request to Zenzefi (requires `X-Access-Token` and `X-Device-ID` headers)
+
+**Required Headers:**
+- `X-Access-Token` - Access token for authentication
+- `X-Device-ID` - Hardware-based device identifier (20-char hash from Desktop Client)
+
+**Response Codes:**
+- `200 OK` - Request proxied successfully
+- `403 Forbidden` - Missing X-Device-ID header (upgrade Desktop Client)
+- `401 Unauthorized` - Invalid/expired access token
+- `409 Conflict` - Token already in use on different device (wait 5 minutes or stop other device)
+
+**Example Usage:**
+```bash
+# Proxy request with device ID
+curl -X GET "http://localhost:8000/api/v1/proxy/users/currentUser" \
+  -H "X-Access-Token: your-access-token" \
+  -H "X-Device-ID: a1b2c3d4e5f6g7h8i9j0"
+
+# ❌ Missing device ID (403 Forbidden)
+curl -X GET "http://localhost:8000/api/v1/proxy/users/currentUser" \
+  -H "X-Access-Token: your-access-token"
+# Error: Device identification required
+
+# ❌ Token in use on another device (409 Conflict)
+curl -X GET "http://localhost:8000/api/v1/proxy/users/currentUser" \
+  -H "X-Access-Token: your-access-token" \
+  -H "X-Device-ID: different-device-id"
+# Error: Token already in use on device 'a1b2c3d4...'
+```
 
 **Full API docs:** http://localhost:8000/docs (when running)
 
@@ -379,7 +427,7 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 148 tests, 85%+ coverage
+**Test organization:** 161 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
 - `test_token_service.py` - Token generation, caching, revoke (21 tests)
@@ -394,9 +442,11 @@ Project uses **Pydantic v2**:
 - `test_token_scopes.py` - Scope integration tests (7 tests)
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
 - `test_health_service.py` - Health check service (15 tests)
+- `test_proxy_session.py` - ProxySession tracking, device conflicts (13 tests) *Phase 3*
 - `test_main.py` - Health checks, CORS, routing (9 tests)
 
 **Phase 2 Tests Added:** 44 new tests (currency, payment, token purchase integration)
+**Phase 3 Tests Added:** 13 new tests (ProxySession tracking, device conflict detection)
 
 **See [TESTING.md](./docs/claude/TESTING.md) for detailed testing guide.**
 
@@ -433,6 +483,16 @@ MCP servers configured in `.mcp.json`:
 - MockPaymentProvider simulates payment gateway for development (replace with YooKassa/Stripe in production)
 - Transaction history tracks all balance changes (DEPOSIT, PURCHASE, REFUND)
 - Pricing: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
+
+**Phase 3 (Device Conflict Detection) - Completed:**
+- **X-Device-ID header required** for all proxy requests (Desktop Client sends hardware fingerprint)
+- ProxySession tracks active sessions with device_id (composite index on token_id, device_id, is_active)
+- **1 token = 1 device policy:** Using token from different device → 409 Conflict error
+- **Session timeout:** 5 minutes of inactivity (auto-cleanup every 2 minutes via APScheduler)
+- **Device ID format:** 20-char SHA256 hash of hardware characteristics (stable across restarts)
+- **Security:** Proxy requests without X-Device-ID → 403 Forbidden (Desktop Client upgrade required)
+- **Session reuse:** Same device can reconnect after timeout (device_id matches)
+- **IP changes allowed:** Same device can switch IPs (VPN, Wi-Fi) without conflict
 
 **When writing code:**
 - Follow existing patterns in codebase
