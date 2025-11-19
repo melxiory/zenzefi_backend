@@ -35,6 +35,7 @@ class TestAdminUserEndpoints:
         """Test listing users as superuser"""
         from app.models import User
         from app.core.security import get_password_hash
+        from app.services.auth_service import AuthService
 
         # Create superuser
         superuser = User(
@@ -43,7 +44,8 @@ class TestAdminUserEndpoints:
             hashed_password=get_password_hash("AdminPass123!"),
             is_active=True,
             is_superuser=True,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
         test_db.commit()
@@ -72,6 +74,7 @@ class TestAdminUserEndpoints:
         """Test listing users with search filter"""
         from app.models import User
         from app.core.security import get_password_hash
+        from app.services.auth_service import AuthService
 
         # Create superuser
         superuser = User(
@@ -80,7 +83,8 @@ class TestAdminUserEndpoints:
             hashed_password=get_password_hash("AdminPass123!"),
             is_active=True,
             is_superuser=True,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
 
@@ -91,7 +95,8 @@ class TestAdminUserEndpoints:
             hashed_password=get_password_hash("TestPass123!"),
             is_active=True,
             is_superuser=False,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(test_user)
         test_db.commit()
@@ -118,6 +123,7 @@ class TestAdminUserEndpoints:
         """Test updating user as superuser"""
         from app.models import User
         from app.core.security import get_password_hash
+        from app.services.auth_service import AuthService
 
         # Create superuser
         superuser = User(
@@ -126,7 +132,8 @@ class TestAdminUserEndpoints:
             hashed_password=get_password_hash("AdminPass123!"),
             is_active=True,
             is_superuser=True,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
         test_db.commit()
@@ -186,6 +193,7 @@ class TestAdminTokenEndpoints:
         """Test listing tokens as superuser"""
         from app.models import User
         from app.core.security import get_password_hash
+        from app.services.auth_service import AuthService
 
         # Create superuser
         superuser = User(
@@ -194,7 +202,8 @@ class TestAdminTokenEndpoints:
             hashed_password=get_password_hash("AdminPass123!"),
             is_active=True,
             is_superuser=True,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
         test_db.commit()
@@ -235,6 +244,7 @@ class TestAdminTokenEndpoints:
         """Test force revoking token as superuser (no refund)"""
         from app.models import User
         from app.core.security import get_password_hash
+        from app.services.auth_service import AuthService
 
         # Create superuser
         superuser = User(
@@ -243,7 +253,8 @@ class TestAdminTokenEndpoints:
             hashed_password=get_password_hash("AdminPass123!"),
             is_active=True,
             is_superuser=True,
-            currency_balance=Decimal("0.00")
+            currency_balance=Decimal("0.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
         test_db.commit()

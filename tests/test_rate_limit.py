@@ -13,6 +13,7 @@ from decimal import Decimal
 from app.models.user import User
 from app.models.token import AccessToken
 from app.core.security import get_password_hash
+from app.services.auth_service import AuthService
 
 
 class TestRateLimitAuth:
@@ -111,7 +112,8 @@ class TestRateLimitAPI:
             username="testuser",
             hashed_password=get_password_hash("SecurePass123!"),
             full_name="Test User",
-            currency_balance=Decimal("1000.00")
+            currency_balance=Decimal("1000.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(user)
         test_db.commit()
@@ -141,7 +143,8 @@ class TestRateLimitAPI:
             username="testuser",
             hashed_password=get_password_hash("SecurePass123!"),
             full_name="Test User",
-            currency_balance=Decimal("1000.00")
+            currency_balance=Decimal("1000.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(user)
         test_db.commit()
@@ -177,7 +180,8 @@ class TestRateLimitProxy:
             email="test@example.com",
             username="testuser",
             hashed_password=get_password_hash("SecurePass123!"),
-            full_name="Test User"
+            full_name="Test User",
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(user)
         test_db.commit()
@@ -213,7 +217,8 @@ class TestRateLimitProxy:
             email="test@example.com",
             username="testuser",
             hashed_password=get_password_hash("SecurePass123!"),
-            full_name="Test User"
+            full_name="Test User",
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(user)
         test_db.commit()
@@ -320,7 +325,8 @@ class TestRateLimitSuperuserBypass:
             hashed_password=get_password_hash("AdminPass123!"),
             full_name="Admin User",
             is_superuser=True,
-            currency_balance=Decimal("10000.00")
+            currency_balance=Decimal("10000.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(superuser)
         test_db.commit()
@@ -379,7 +385,8 @@ class TestRateLimitEdgeCases:
             username="testuser",
             hashed_password=get_password_hash("SecurePass123!"),
             full_name="Test User",
-            currency_balance=Decimal("1000.00")
+            currency_balance=Decimal("1000.00"),
+            referral_code=AuthService.generate_referral_code(test_db)
         )
         test_db.add(user)
         test_db.commit()
