@@ -97,10 +97,72 @@ class TokenService:
         db.commit()
         db.refresh(db_token)
 
+        # 9. Award referral bonus if applicable (Phase 5)
+        from app.services.currency_service import CurrencyService
+        # user_id is str, convert to UUID for award_referral_bonus
+        CurrencyService.award_referral_bonus(
+            referee_id=UUID(user_id) if isinstance(user_id, str) else user_id,
+            purchase_amount=cost,
+            db=db
+        )
+
         # Cache token in Redis
         TokenService._cache_token(db_token)
 
         return db_token, cost
+
+    @staticmethod
+    def create_token_without_charge(
+        user_id: UUID,
+        duration_hours: int,
+        scope: str,
+        db: Session
+    ) -> dict:
+        """
+        Create access token WITHOUT balance deduction (for bundle purchases).
+
+        This method is used by BundleService where balance is already deducted.
+        Does NOT create transaction or award referral bonus - that's done by caller.
+
+        Args:
+            user_id: User UUID
+            duration_hours: Token duration in hours
+            scope: Access scope ("full" or "certificates_only")
+            db: Database session
+
+        Returns:
+            dict: Token data for response (compatible with API schemas)
+        """
+        # Generate random token
+        token_string = secrets.token_urlsafe(48)
+        now = datetime.now(timezone.utc)
+
+        # Create token record
+        db_token = AccessToken(
+            user_id=str(user_id),
+            token=token_string,
+            duration_hours=duration_hours,
+            scope=scope,
+            created_at=now,
+            activated_at=None,
+            is_active=True,
+        )
+
+        db.add(db_token)
+        db.flush()  # Flush to get ID, but don't commit yet
+        db.refresh(db_token)
+
+        # Return token data as dict (compatible with BundleService response)
+        return {
+            "id": str(db_token.id),
+            "token": db_token.token,
+            "duration_hours": db_token.duration_hours,
+            "scope": db_token.scope,
+            "activated_at": None,
+            "expires_at": None,
+            "is_active": db_token.is_active,
+            "created_at": db_token.created_at.isoformat()
+        }
 
     @staticmethod
     def check_token_status(token: str, db: Session) -> Tuple[bool, Optional[dict]]:

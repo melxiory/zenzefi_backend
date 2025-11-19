@@ -2,8 +2,8 @@
 
 **Production-Ready** сервер аутентификации и проксирования для контроля доступа к Zenzefi (Windows 11) с системой монетизации через внутреннюю валюту ZNC.
 
-**Версия:** v0.6.0-beta
-**Статус:** ✅ Production-Ready (все 4 этапа завершены)
+**Версия:** v0.7.0-beta
+**Статус:** ✅ Production-Ready + Monetization Boost (Phase 5 Sprint 1 completed)
 
 ## Технологический стек
 
@@ -14,7 +14,7 @@
 - **Alembic** - Миграции БД
 - **Pydantic v2** - Валидация данных
 - **PyJWT** - JWT токены для API аутентификации (HS256)
-- **pytest** - Тестирование с реальными сервисами (174 теста, 85%+ покрытие)
+- **pytest** - Тестирование с реальными сервисами (208 тестов, 85%+ покрытие)
 - **Prometheus** - Метрики и мониторинг
 - **Locust** - Load testing
 - **APScheduler** - Background tasks (health checks, session cleanup)
@@ -163,7 +163,7 @@ poetry run pytest tests/ -n auto
 - Тесты требуют запущенных PostgreSQL и Redis (через `docker-compose.dev.yml`)
 - Используется отдельная БД `zenzefi_test` (создаётся автоматически скриптом)
 - Тесты используют **реальные сервисы**, не моки
-- **174 теста, 85%+ покрытие кода**
+- **208 тестов, 85%+ покрытие кода**
 
 ### Load Testing
 
@@ -209,11 +209,9 @@ poetry run mypy app/
 ### Authentication (`/api/v1/auth`)
 
 - `POST /register` - Регистрация нового пользователя
+  - Body: `{"email": "...", "username": "...", "password": "...", "full_name": "..."}`
+  - Query param (optional): `referral_code` - Referral code от другого пользователя 🆕 Phase 5
 - `POST /login` - Логин и получение JWT токена
-
-### Users (`/api/v1/users`)
-
-- `GET /me` - Получить профиль текущего пользователя (требуется JWT)
 
 ### Access Tokens (`/api/v1/tokens`)
 
@@ -235,6 +233,24 @@ poetry run mypy app/
 - `POST /purchase` - Создать платёж для пополнения ZNC (requires JWT)
   - Body: `{"amount": 100}`
   - Returns: Payment URL для оплаты
+
+### Token Bundles (`/api/v1/bundles`) 🆕 Phase 5
+
+- `GET /` - Список доступных bundles (публичный endpoint)
+  - Query params: `active_only` (default: true)
+  - Returns: List of bundles с discount_percent, savings, price_per_token
+- `GET /{bundle_id}` - Получить конкретный bundle (публичный endpoint)
+- `POST /{bundle_id}/purchase` - Купить bundle (требуется JWT, стоимость в ZNC)
+  - Returns: tokens + new balance
+- `POST /` - Создать bundle (требуется superuser)
+- `PATCH /{bundle_id}` - Обновить bundle (требуется superuser)
+- `DELETE /{bundle_id}` - Soft delete bundle (требуется superuser)
+
+### Users (`/api/v1/users`)
+
+- `GET /me` - Получить профиль текущего пользователя (требуется JWT)
+- `GET /me/referrals` - Получить referral статистику 🆕 Phase 5
+  - Returns: referral_code, referral_link, total_referrals, qualifying_referrals, total_bonus_earned, referred_users
 
 ### Admin (`/api/v1/admin`)
 
@@ -268,27 +284,45 @@ zenzefi_backend/
 │   ├── api/
 │   │   ├── v1/
 │   │   │   ├── auth.py              # Authentication endpoints
-│   │   │   ├── users.py             # User endpoints
+│   │   │   ├── users.py             # User endpoints + referral stats 🆕
 │   │   │   ├── tokens.py            # Token endpoints
-│   │   │   └── proxy.py             # Proxy endpoints (HTTP + WebSocket)
+│   │   │   ├── bundles.py           # Token bundle endpoints 🆕 Phase 5
+│   │   │   ├── currency.py          # Currency/balance endpoints
+│   │   │   ├── admin.py             # Admin endpoints
+│   │   │   ├── proxy.py             # Proxy endpoints (HTTP)
+│   │   │   └── webhooks.py          # Payment webhook handler
 │   │   └── deps.py                  # API dependencies
 │   ├── core/
 │   │   ├── database.py              # Database connection
 │   │   ├── redis.py                 # Redis connection
 │   │   ├── security.py              # JWT, password hashing
-│   │   └── logging.py               # Logging configuration
+│   │   ├── logging.py               # Logging configuration
+│   │   ├── health_scheduler.py      # Background tasks (APScheduler)
+│   │   └── permissions.py           # Scope-based permissions
 │   ├── models/
-│   │   ├── user.py                  # User model
-│   │   └── token.py                 # AccessToken model
+│   │   ├── user.py                  # User model (+ referral fields 🆕)
+│   │   ├── token.py                 # AccessToken model
+│   │   ├── bundle.py                # TokenBundle model 🆕 Phase 5
+│   │   ├── transaction.py           # Transaction model (DEPOSIT, PURCHASE, REFUND, REFERRAL_BONUS 🆕)
+│   │   ├── proxy_session.py         # ProxySession model (device tracking)
+│   │   └── audit_log.py             # AuditLog model
 │   ├── schemas/
-│   │   ├── user.py                  # User schemas
+│   │   ├── user.py                  # User schemas (+ ReferralStatsResponse 🆕)
 │   │   ├── token.py                 # Token schemas
+│   │   ├── bundle.py                # Bundle schemas 🆕 Phase 5
+│   │   ├── currency.py              # Currency schemas
 │   │   └── auth.py                  # Auth schemas
 │   ├── services/
-│   │   ├── auth_service.py          # Auth business logic
+│   │   ├── auth_service.py          # Auth business logic (+ referral codes 🆕)
 │   │   ├── token_service.py         # Token business logic
-│   │   ├── proxy_service.py         # HTTP/WebSocket proxying
-│   │   └── content_rewriter.py      # URL rewriting в проксированном контенте
+│   │   ├── bundle_service.py        # Bundle business logic 🆕 Phase 5
+│   │   ├── currency_service.py      # Currency/balance logic (+ referral bonuses 🆕)
+│   │   ├── payment_service.py       # Payment gateway integration
+│   │   ├── proxy_service.py         # HTTP proxying
+│   │   ├── content_rewriter.py      # URL rewriting в проксированном контенте
+│   │   └── health_service.py        # Health checks
+│   ├── middleware/
+│   │   └── rate_limit.py            # Rate limiting middleware
 │   ├── config.py                    # Application settings
 │   └── main.py                      # FastAPI application
 ├── alembic/                         # Database migrations
@@ -296,15 +330,29 @@ zenzefi_backend/
 │   ├── deploy_docker.sh             # Docker deployment script
 │   ├── redis_mcp.py                 # Redis MCP server
 │   └── test_create_token.py         # Test auth flow
-├── tests/                           # Tests (85 тестов, 85%+ coverage)
+├── tests/                           # Tests (208 тестов, 85%+ coverage)
 │   ├── conftest.py                  # Test fixtures
-│   ├── test_security.py             # Security tests
-│   ├── test_auth_service.py         # Auth service tests
-│   ├── test_token_service.py        # Token service tests
-│   ├── test_api_auth.py             # Auth API tests
-│   ├── test_api_tokens.py           # Token API tests
-│   ├── test_cookie_auth.py          # Cookie auth tests
-│   └── test_main.py                 # Main app tests
+│   ├── test_security.py             # Security tests (14 tests)
+│   ├── test_auth_service.py         # Auth service tests (10 tests)
+│   ├── test_token_service.py        # Token service tests (21 tests)
+│   ├── test_api_auth.py             # Auth API tests (13 tests)
+│   ├── test_api_tokens.py           # Token API tests (16 tests)
+│   ├── test_currency_service.py     # Currency service tests (10 tests)
+│   ├── test_api_currency.py         # Currency API tests (13 tests)
+│   ├── test_payment_service.py      # Payment gateway tests (5 tests)
+│   ├── test_api_payment.py          # Payment API tests (8 tests)
+│   ├── test_token_purchase.py       # Token purchase integration tests (8 tests)
+│   ├── test_bundles.py              # Bundle tests 🆕 Phase 5 (20 tests)
+│   ├── test_referral_system.py      # Referral system tests 🆕 Phase 5 (14 tests)
+│   ├── test_permissions.py          # Scope permissions tests (8 tests)
+│   ├── test_token_scopes.py         # Token scope integration tests (7 tests)
+│   ├── test_proxy_status.py         # Proxy status endpoint tests (4 tests)
+│   ├── test_proxy_session.py        # ProxySession tracking tests (13 tests)
+│   ├── test_admin_endpoints.py      # Admin API tests (10 tests)
+│   ├── test_rate_limit.py           # Rate limiting tests (8 tests)
+│   ├── test_health_service.py       # Health check tests (15 tests)
+│   ├── test_main.py                 # Main app tests (12 tests)
+│   └── load/                        # Load testing suite (Locust)
 ├── .mcp.json                        # MCP servers configuration
 ├── docker-compose.dev.yml           # Development Docker setup
 ├── pyproject.toml                   # Poetry dependencies
@@ -419,24 +467,90 @@ zenzefi_backend/
 - ✅ Load testing suite (Locust с realistic user workflows)
 - ✅ 174 теста с реальными сервисами (85%+ покрытие)
 
-**Итого:** ✅ Все 4 этапа завершены, система готова к production deployment!
+### Phase 5: Monetization Boost ⏳ В ПРОЦЕССЕ (v0.7.0-beta)
 
-## 💡 Будущие возможности (Optional)
+**Sprint 1: Token Bundles + Referral System** ✅ ЗАВЕРШЁН
+- ✅ **Token Bundles** - Пакетные предложения со скидками 10-20%
+  - Model: TokenBundle (name, token_count, duration_hours, discount_percent, base_price, total_price)
+  - Computed properties: savings, price_per_token
+  - Full CRUD API + 4 default bundles in migration
+  - 20 тестов bundle system
+- ✅ **Referral System** - 10% bonus от первой покупки рефералов >100 ZNC
+  - User fields: referral_code (12-char unique), referred_by_id, referral_bonus_earned
+  - Automatic code generation with collision handling
+  - Registration with referral_code parameter
+  - API endpoint /api/v1/users/me/referrals для статистики
+  - 14 тестов referral system
+- ✅ **208 тестов** (34 новых), все Phase 5 Sprint 1 тесты прошли
 
-### Phase 2.5: Token Bundles & Referrals
-- Пакетные предложения со скидками
-- Реферальная система с бонусами
-- GET /api/v1/bundles, POST /api/v1/bundles/{id}/purchase
+**Sprint 2: Token Auto-Renewal** 📋 СЛЕДУЮЩИЙ
+- Subscription-like model для recurring revenue
+- Automatic token extension перед expiration
+- User preferences для auto-renewal
+- 10-12 новых тестов
 
-### Phase 3.5: Usage Analytics
-- Статистика использования по пользователям
-- Global stats для админов
-- Period filtering (day, week, month)
+**Impact Phase 5:** +75-120% revenue growth, viral user acquisition через referrals
 
-### Phase 4.5: Notification System
-- Email notifications (token expiring, balance low)
-- Webhook notifications с HMAC verification
-- Background notification tasks
+**Итого:** ✅ Phase 1-4 + Phase 5 Sprint 1 завершены!
+
+## 🚀 Roadmap v0.7.0 → v1.0.0
+
+**Текущая версия:** v0.7.0-beta (Production-Ready + Monetization Boost Sprint 1)
+**Целевая версия:** v1.0.0 (Full-Featured Platform)
+**Timeline:** 16-20 дней (2 оставшихся sprints в Phase 5 + Phase 6-7)
+**Expected ROI:** +75-120% revenue, +45-65% retention
+
+### ✅ Sprint 1: Token Bundles + Referral System (ЗАВЕРШЁН)
+
+**Completed Features:**
+- ✅ **Token Bundles** - Пакетные предложения со скидками (10-20% off)
+- ✅ **Referral System** - 10% bonus от первой покупки рефералов >100 ZNC
+- ✅ 34 новых теста (20 bundles + 14 referrals), 208 total
+
+**Sprint 2: Token Auto-Renewal** - 6-8 дней (СЛЕДУЮЩИЙ)
+
+**Planned Features:**
+- 🔄 **Token Auto-Renewal** - Subscription-like model, recurring revenue
+- User preferences для auto-renewal (enabled/disabled, min_balance threshold)
+- Automatic token extension перед expiration (если баланс достаточен)
+- Email notifications для renewal events
+
+**Impact Sprint 1-2:** +75-120% revenue growth
+
+### Phase 6: UX Enhanced (v0.8.0-beta) - 8-10 дней
+
+**Features:**
+- 📊 **Usage Analytics** - User stats (requests, bytes, sessions) + Admin dashboards
+- 📧 **Email Notifications** - 4 типа уведомлений (token expiring, balance low, referral bonus, auto-renewal)
+- 🎁 **Token Gifting** - Подарочные токены для viral growth
+- 📈 **Grafana Dashboards** - Production monitoring templates и alerting
+
+**Impact:** +45-65% retention improvement
+
+### Phase 7: Developer Ecosystem (v0.9.0-beta) - 8-10 дней
+
+**Features:**
+- 🔗 **Webhook Notifications** - Event-driven integrations (6 event types, HMAC signature)
+- 💱 **Multi-Currency Support** - USD, EUR, RUB в дополнение к ZNC
+- 🎫 **API Rate Limiting Tiers** - Free (100 req/min), Premium (500 req/min), Enterprise (unlimited)
+
+**Impact:** Developer ecosystem, international expansion
+
+### 📚 Детальная документация
+
+- **[ROADMAP_V1.md](./docs/ROADMAP_V1.md)** - Полный timeline, milestones, success metrics
+- **[PHASE_FUTURE_DETAILED.md](./docs/phases/PHASE_FUTURE_DETAILED.md)** - Детальный implementation plan (2700+ строк)
+  - Database models, API endpoints, testing strategy
+  - Code examples, security considerations
+  - Expected ROI для каждой функции
+- **[docs/phases/README.md](./docs/phases/README.md)** - Обзор всех этапов разработки
+
+**Version Progression:**
+```
+v0.6.0-beta → v0.7.0-beta ✅ → v0.8.0-beta → v0.9.0-beta → v1.0.0
+174 tests      208 tests        225 tests      245 tests      265+ tests
+Nov 2025       Nov 2025 ✅      Dec 2025       Jan 2026       Jan 2026
+```
 
 ## Production Deployment
 

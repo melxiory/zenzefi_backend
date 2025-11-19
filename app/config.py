@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Application
     PROJECT_NAME: str = "Zenzefi Backend"
-    VERSION: str = "0.6.0-beta"
+    VERSION: str = "0.7.0-beta"
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
 
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
 
     # Zenzefi Target (via VPN)
     ZENZEFI_TARGET_URL: str = "https://zenzefi-win11-server"
+
+    # Backend URL (for referral links, webhooks, etc.)
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Health Check Settings
     HEALTH_CHECK_INTERVAL: int = 50  # Health check interval in seconds (40-60s recommended)
