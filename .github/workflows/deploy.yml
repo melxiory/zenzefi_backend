@@ -44,6 +44,10 @@ jobs:
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:buildcache,mode=max
 
+      - name: Extract Git SHA
+        id: git-sha
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Deploy to production server via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -52,6 +56,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/zenzefi
+            export GIT_SHA=${{ steps.git-sha.outputs.sha }}
             docker compose -f docker-compose.prod.tailscale.yml pull backend
             docker compose -f docker-compose.prod.tailscale.yml up -d --force-recreate backend
             docker system prune -f
