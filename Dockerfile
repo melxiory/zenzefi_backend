@@ -1,6 +1,12 @@
 # Production Dockerfile for Zenzefi Backend
 FROM python:3.13-slim
 
+# Build arguments for cache invalidation
+ARG BUILDTIME
+ARG GIT_SHA
+ENV BUILD_ID=${BUILDTIME} \
+    GIT_COMMIT=${GIT_SHA}
+
 # Set working directory
 WORKDIR /app
 
