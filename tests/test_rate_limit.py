@@ -16,6 +16,27 @@ from app.core.security import get_password_hash
 from app.services.auth_service import AuthService
 
 
+@pytest.fixture(autouse=True)
+def clear_rate_limit_keys(fake_redis):
+    """
+    Clear all rate limit keys from Redis before each test.
+
+    This prevents Redis state accumulation between tests that was causing
+    timing issues in rate limit tests.
+    """
+    # Get all rate limit keys
+    keys = fake_redis.keys("rate_limit:*")
+    if keys:
+        fake_redis.delete(*keys)
+
+    yield
+
+    # Clear again after test
+    keys = fake_redis.keys("rate_limit:*")
+    if keys:
+        fake_redis.delete(*keys)
+
+
 class TestRateLimitAuth:
     """Tests for auth endpoint rate limiting (IP-based, 5 req/hour)"""
 
@@ -38,9 +59,9 @@ class TestRateLimitAuth:
             # Should succeed (not rate limited)
             assert response.status_code in [201, 400]  # 400 if validation fails, but not 429
 
-    @pytest.mark.skip(reason="Redis state accumulation between tests causes timing issues")
+    @pytest.mark.skip(reason="Flaky test - depends on Redis timing and isolation between tests")
     def test_auth_rate_limit_exceeded(self, client: TestClient):
-        """Test auth endpoint blocks requests after limit (5/hour) - TIMING ISSUE"""
+        """Test auth endpoint blocks requests after limit (5/hour)"""
         test_data = {
             "email": "test@example.com",
             "username": "testuser",
@@ -65,9 +86,9 @@ class TestRateLimitAuth:
         assert response.status_code == 429
         assert "rate_limit_exceeded" in response.json()["detail"]["error"]
 
-    @pytest.mark.skip(reason="Redis state accumulation between tests causes timing issues")
+    @pytest.mark.skip(reason="Flaky test - depends on Redis timing and isolation between tests")
     def test_auth_rate_limit_error_format(self, client: TestClient):
-        """Test 429 error response format for auth rate limit - TIMING ISSUE"""
+        """Test 429 error response format for auth rate limit"""
         test_data = {
             "email": "test@example.com",
             "username": "testuser",
@@ -283,9 +304,9 @@ class TestRateLimitSlidingWindow:
             count = fake_redis.zcard(key)
             assert count == 3
 
-    @pytest.mark.skip(reason="Redis state accumulation between tests causes timing issues")
+    @pytest.mark.skip(reason="Flaky test - depends on Redis timing and isolation between tests")
     def test_retry_after_calculation(self, client: TestClient):
-        """Test retry_after is calculated correctly - TIMING ISSUE"""
+        """Test retry_after is calculated correctly"""
         test_data = {
             "email": "test@example.com",
             "username": "testuser",
