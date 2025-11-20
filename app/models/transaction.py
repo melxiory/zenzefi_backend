@@ -16,6 +16,7 @@ class TransactionType(str, enum.Enum):
     DEPOSIT = "deposit"  # Balance top-up (пополнение баланса)
     PURCHASE = "purchase"  # Token purchase (покупка токена)
     REFUND = "refund"  # Token refund (возврат за неиспользованное время)
+    REFERRAL_BONUS = "referral_bonus"  # Referral bonus (реферальный бонус)
 
 
 class Transaction(Base):

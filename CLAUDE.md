@@ -13,27 +13,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Zenzefi Backend** - Authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens. The server acts as an intermediary between applications (like DTS Monaco) and the target server, enabling monetization through token-based access control.
+**Zenzefi Backend** - Production-ready authentication and proxy server for controlling access to Zenzefi (Windows 11) via time-based access tokens with ZNC currency monetization system. The server acts as an intermediary between applications (like DTS Monaco) and the target server.
 
-**Current Status:** v0.5.0-beta - Device conflict detection implemented ("1 token = 1 device" policy). All core authentication, token generation, proxy functionality, scope-based access control, device conflict detection, and monetization features tested (156/156 tests passing, 85%+ code coverage).
+**Current Status:** v0.7.0-beta - ✅ **PRODUCTION-READY + MONETIZATION BOOST**. Phase 5 Sprint 1 completed (Token Bundles + Referral System). Full authentication, token management, monetization (ZNC currency + bundles + referrals), device conflict detection, admin tools, rate limiting, CI/CD pipeline, and monitoring systems operational (208/208 tests passing, 85%+ code coverage).
 
 **Phase Status:**
 - ✅ Phase 1 (MVP): Core authentication, tokens, HTTP proxy, health checks - COMPLETED
 - ✅ Phase 2 (Currency System): ZNC balance, transactions, payment gateway, refunds - COMPLETED
-- ✅ Phase 3 (Monitoring): ProxySession tracking with device conflict detection, session timeout - COMPLETED
-- ⏳ Phase 4 (Production): Rate limiting, CI/CD, backups - PARTIALLY (Docker deployment done)
+- ✅ Phase 3 (Monitoring): ProxySession tracking, device conflicts, admin endpoints, audit logging - COMPLETED
+- ✅ Phase 4 (Production): Rate limiting, CI/CD, Prometheus metrics, backups, load testing - COMPLETED
+- ⏳ Phase 5 (Monetization Boost): **Sprint 1 ✅ (Token Bundles + Referrals)**, Sprint 2 📋 (Auto-Renewal) - IN PROGRESS
+
+**Roadmap v0.7.0 → v1.0.0 (Updated):**
+- ✅ Phase 5 Sprint 1 (v0.7.0): Token Bundles + Referral System - COMPLETED
+- 📋 Phase 5 Sprint 2: Token Auto-Renewal (6-8 дней) - NEXT
+- 📋 Phase 6 (v0.8.0): UX Enhanced - Analytics, Email Notifications, Gifting, Dashboards (8-10 дней)
+- 📋 Phase 7 (v0.9.0): Developer Ecosystem - Webhooks, Multi-Currency, API Tiers (8-10 дней)
+- 🚀 v1.0.0: Full-Featured Production Platform (Expected: Jan 2026)
+
+**See Roadmap Details:**
+- [ROADMAP_V1.md](./docs/ROADMAP_V1.md) - Timeline, milestones, success metrics
+- [PHASE_FUTURE_DETAILED.md](./docs/phases/PHASE_FUTURE_DETAILED.md) - Detailed implementation plan (2700+ lines)
 
 ## Tech Stack
 
 - **Python 3.13+** - Runtime environment
 - **FastAPI 0.119+** - Async web framework
 - **PostgreSQL 15+** - Primary database (SQLAlchemy 2.0 ORM)
-- **Redis 7+** - Token caching, sessions, health check results
+- **Redis 7+** - Token caching, sessions, rate limiting, health check results
 - **Alembic** - Database migrations
 - **Pydantic v2** - Data validation
 - **PyJWT** - JWT tokens for API authentication
-- **APScheduler** - Background tasks for health checks (50s interval)
-- **pytest** - Testing framework with real PostgreSQL and Redis
+- **APScheduler** - Background tasks (health checks, session cleanup, audit cleanup)
+- **pytest** - Testing framework with real PostgreSQL and Redis (208 tests)
+- **Prometheus** - Metrics and monitoring (/metrics endpoint)
+- **Locust** - Load testing and performance validation
 - **Poetry** - Dependency management
 
 ## Quick Start
@@ -125,6 +139,7 @@ app/
 - Operations: get_balance, credit_balance, get_transactions
 - Atomic balance updates with row-level locking
 - Transaction history with pagination and filtering
+- **award_referral_bonus()** 🆕 Phase 5: Awards 10% bonus to referrer on first qualifying purchase >100 ZNC
 
 **PaymentService** (`app/services/payment_service.py`):
 - MockPaymentProvider for development/testing
@@ -132,10 +147,18 @@ app/
 - Operations: create_payment, simulate_payment_success, handle_webhook
 - Conversion rate: 1 ZNC = 10 RUB (configurable)
 
+**BundleService** (`app/services/bundle_service.py`) 🆕 Phase 5:
+- Token bundle management (packages with bulk discounts)
+- Operations: get_available_bundles, get_bundle_by_id, purchase_bundle, create/update/delete_bundle
+- Bundle purchases use create_token_without_charge() to avoid double balance deduction
+- Automatic referral bonus award after bundle purchase
+- Full CRUD with admin permissions
+
 ### Database Models
 
 **User** (`app/models/user.py`):
 - Fields: id (UUID), email, username, hashed_password, full_name, is_active, is_superuser, currency_balance (Decimal)
+- **Referral fields** 🆕 Phase 5: referral_code (String 12, unique), referred_by_id (FK UUID), referral_bonus_earned (Decimal)
 - Relationships: tokens (one-to-many with AccessToken, cascade delete), transactions (one-to-many with Transaction, cascade delete)
 - currency_balance: Decimal(10, 2), default 0.00, indexed (added in Phase 2)
 
@@ -146,10 +169,16 @@ app/
 - Valid durations: 1, 12, 24, 168 (week), 720 (month) hours
 - Pricing: 1h=1 ZNC, 12h=10 ZNC, 24h=18 ZNC, 7d=100 ZNC, 30d=300 ZNC
 
-**Transaction** (`app/models/transaction.py`) - *Added in Phase 2*:
+**TokenBundle** (`app/models/bundle.py`) 🆕 Phase 5:
+- Fields: id (UUID), name (String 100), description (Text), token_count (Integer), duration_hours (Integer), scope (String), discount_percent (Decimal), base_price (Decimal), total_price (Decimal), is_active (Boolean), created_at, updated_at
+- **Computed properties**: savings (base_price - total_price), price_per_token (total_price / token_count)
+- Default bundles: Starter Pack (5x24h, 10% off), Developer Pack (10x168h, 15% off), Team Pack (25x168h, 20% off), Enterprise Pack (50x720h, 25% off)
+- All bundles soft-deletable (is_active flag)
+
+**Transaction** (`app/models/transaction.py`) - *Added in Phase 2, Updated Phase 5*:
 - Fields: id (UUID), user_id (FK), amount (Decimal), transaction_type (enum), description, payment_id, created_at
-- TransactionType enum: DEPOSIT (balance top-up), PURCHASE (token purchase), REFUND (token revoke refund)
-- amount: positive for deposit/refund, negative for purchase
+- TransactionType enum: DEPOSIT (balance top-up), PURCHASE (token purchase), REFUND (token revoke refund), **REFERRAL_BONUS** 🆕 (referral bonus award)
+- amount: positive for deposit/refund/bonus, negative for purchase
 - payment_id: External payment gateway transaction ID (optional, for tracking)
 - Relationship: user (many-to-one with User)
 
@@ -228,6 +257,18 @@ HEALTH_CHECK_TIMEOUT=10.0
 ### Webhooks (`/api/v1/webhooks`) - *Phase 2*
 - `POST /payment` - Payment webhook handler (for payment gateway callbacks, HMAC verification in production)
 - `GET /mock-payment` - Mock payment completion page (testing only)
+
+### Token Bundles (`/api/v1/bundles`) - *Phase 5 Sprint 1*
+- `GET /` - List available bundles (public, supports active_only filter)
+- `GET /{bundle_id}` - Get bundle by ID (public)
+- `POST /{bundle_id}/purchase` - Purchase bundle (JWT auth required, costs ZNC)
+- `POST /` - Create bundle (superuser only)
+- `PATCH /{bundle_id}` - Update bundle (superuser only)
+- `DELETE /{bundle_id}` - Soft delete bundle (superuser only)
+
+### Referrals (`/api/v1/users`) - *Phase 5 Sprint 1*
+- `GET /me/referrals` - Get referral stats (JWT auth required)
+  - Returns: referral_code, total_referrals, qualifying_referrals, total_bonus_earned, referral_link, referred_users list
 
 ## Token Scopes (Access Control)
 
@@ -427,7 +468,7 @@ Project uses **Pydantic v2**:
 
 **Test Database:** `zenzefi_test` (separate from `zenzefi_dev`)
 
-**Test organization:** 161 tests, 85%+ coverage
+**Test organization:** 208 tests, 85%+ coverage
 - `test_security.py` - Password hashing, JWT (14 tests)
 - `test_auth_service.py` - Registration, login (10 tests)
 - `test_token_service.py` - Token generation, caching, revoke (21 tests)
@@ -443,10 +484,16 @@ Project uses **Pydantic v2**:
 - `test_proxy_status.py` - Proxy status endpoint (4 tests)
 - `test_health_service.py` - Health check service (15 tests)
 - `test_proxy_session.py` - ProxySession tracking, device conflicts (13 tests) *Phase 3*
-- `test_main.py` - Health checks, CORS, routing (9 tests)
+- `test_rate_limit.py` - Rate limiting middleware (8 tests) *Phase 4*
+- `test_main.py` - Health checks, CORS, routing, metrics (12 tests)
+- `test_bundles.py` - Token bundles, purchases, admin operations (20 tests) *Phase 5 Sprint 1*
+- `test_referral_system.py` - Referral codes, bonuses, integration (14 tests) *Phase 5 Sprint 1*
 
 **Phase 2 Tests Added:** 44 new tests (currency, payment, token purchase integration)
 **Phase 3 Tests Added:** 13 new tests (ProxySession tracking, device conflict detection)
+**Phase 4 Tests Added:** 13 new tests (rate limiting, metrics, version check)
+**Phase 5 Sprint 1 Tests Added:** 34 new tests (token bundles, referral system)
+**Load Testing:** Locust suite in `tests/load/` (realistic user workflows, performance validation)
 
 **See [TESTING.md](./docs/claude/TESTING.md) for detailed testing guide.**
 
@@ -461,7 +508,7 @@ MCP servers configured in `.mcp.json`:
 ## Notes for Claude Code
 
 **Critical Information:**
-- All tests must pass before considering work complete (148 tests as of Phase 2)
+- All tests must pass before considering work complete (208 tests as of v0.7.0-beta)
 - Use real Redis and PostgreSQL for integration testing (configured in `conftest.py`)
 - Token validation uses two-tier caching: Redis (fast) → PostgreSQL (fallback)
 - Access tokens are random strings (not JWTs) - distinct from API JWT tokens
@@ -493,6 +540,33 @@ MCP servers configured in `.mcp.json`:
 - **Security:** Proxy requests without X-Device-ID → 403 Forbidden (Desktop Client upgrade required)
 - **Session reuse:** Same device can reconnect after timeout (device_id matches)
 - **IP changes allowed:** Same device can switch IPs (VPN, Wi-Fi) without conflict
+
+**Phase 4 (Production Readiness) - Completed:**
+- **Rate Limiting Middleware:** Redis-based sliding window (auth: 5/hour, api: 100/min, proxy: 1000/min)
+- **CI/CD Pipeline:** GitHub Actions workflows (test.yml, deploy.yml) with PostgreSQL/Redis services
+- **Prometheus Metrics:** `/metrics` endpoint with counters, gauges, histograms (active_tokens, requests, latency)
+- **Automated Backups:** Daily PostgreSQL backup script + cron job (30-day retention, optional S3 upload)
+- **Load Testing Suite:** Locust tests in `tests/load/` (realistic workflows, performance targets: 1000 req/s, p95 < 200ms)
+- **174 tests passing** with real services, 85%+ code coverage
+- **File:** `app/middleware/rate_limit.py`, `app/api/v1/metrics.py`, `scripts/backup_database.sh`, `tests/load/locustfile.py`
+
+**Phase 5 Sprint 1 (Monetization Boost) - Completed:**
+- **Token Bundles:** Bulk token purchases with progressive discounts (10-20%)
+  - 4 default bundles: Starter (5x24h, 10%), Developer (10x7d, 15%), Team (25x7d, 20%), Enterprise (50x30d, 25%)
+  - BundleService with CRUD operations, purchase without double balance deduction
+  - Computed properties: savings, price_per_token
+  - 20 bundle tests (model, service, API integration)
+- **Referral System:** Viral growth with 10% bonus on first qualifying purchase >100 ZNC
+  - 12-char unique referral codes (alphanumeric uppercase)
+  - User model extended: referral_code, referred_by_id, referral_bonus_earned
+  - CurrencyService.award_referral_bonus() for automatic bonus distribution
+  - Transaction type: REFERRAL_BONUS for tracking bonus history
+  - Referral stats API endpoint with detailed metrics
+  - 14 referral tests (code generation, registration, bonus logic, API)
+- **208 tests passing** (34 new Phase 5 tests), 85%+ code coverage
+- **Database migrations:** 2 new migrations for bundles and referrals
+- **Files:** `app/models/bundle.py`, `app/services/bundle_service.py`, `app/api/v1/bundles.py`, `tests/test_bundles.py`, `tests/test_referral_system.py`
+- **Expected revenue impact:** +75-120% (bundles drive bulk purchases, referrals expand user base)
 
 **When writing code:**
 - Follow existing patterns in codebase

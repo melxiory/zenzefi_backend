@@ -174,3 +174,78 @@ class CurrencyService:
         db.commit()
 
         return user.currency_balance
+
+    @staticmethod
+    def award_referral_bonus(
+        referee_id: UUID,
+        purchase_amount: Decimal,
+        db: Session
+    ) -> Optional[Decimal]:
+        """
+        Award referral bonus to referrer when referee makes qualifying purchase.
+
+        Rules:
+        - Only triggered on FIRST purchase >100 ZNC by referee
+        - Referrer receives 10% of purchase amount
+        - Bonus tracked in referrer's referral_bonus_earned
+
+        Args:
+            referee_id: User ID of person making purchase (who was referred)
+            purchase_amount: Amount of purchase in ZNC
+            db: Database session
+
+        Returns:
+            Decimal: Bonus amount awarded to referrer, or None if no bonus awarded
+
+        Note:
+            This method should be called AFTER successful purchase transaction.
+        """
+        # Get referee
+        referee = db.query(User).filter(User.id == referee_id).first()
+        if not referee or not referee.referred_by_id:
+            return None  # User wasn't referred by anyone
+
+        # Check if purchase qualifies (>100 ZNC)
+        if purchase_amount <= Decimal("100.00"):
+            return None  # Purchase too small
+
+        # Check if this is referee's first qualifying purchase
+        # Count previous PURCHASE transactions >100 ZNC
+        previous_purchases = db.query(Transaction).filter(
+            Transaction.user_id == referee_id,
+            Transaction.transaction_type == TransactionType.PURCHASE,
+            Transaction.amount <= Decimal("-100.00")  # Negative because purchases are stored as negative
+        ).count()
+
+        if previous_purchases > 1:  # Current purchase is already in DB, so >1 means not first
+            return None  # Not first qualifying purchase
+
+        # Calculate 10% bonus
+        bonus_amount = (purchase_amount * Decimal("0.10")).quantize(Decimal("0.01"))
+
+        # Get referrer with row lock
+        referrer = db.query(User).filter(
+            User.id == referee.referred_by_id
+        ).with_for_update().first()
+
+        if not referrer:
+            return None  # Referrer no longer exists
+
+        # Award bonus
+        referrer.currency_balance += bonus_amount
+        referrer.referral_bonus_earned += bonus_amount
+
+        # Create transaction for referrer
+        transaction = Transaction(
+            user_id=referrer.id,
+            amount=bonus_amount,
+            transaction_type=TransactionType.REFERRAL_BONUS,
+            description=f"Referral bonus from {referee.username} (first purchase {purchase_amount} ZNC)",
+            payment_id=None,
+            created_at=datetime.now(timezone.utc)
+        )
+
+        db.add(transaction)
+        db.commit()
+
+        return bonus_amount

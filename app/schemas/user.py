@@ -58,8 +58,39 @@ class UserResponse(UserBase):
     id: UUID
     is_active: bool
     is_superuser: bool
+    referral_code: str  # User's unique referral code (Phase 5)
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Referral System Schemas (Phase 5)
+
+
+class ReferredUserInfo(BaseModel):
+    """Information about a referred user"""
+
+    id: UUID
+    username: str
+    email: EmailStr
+    created_at: datetime
+    has_made_qualifying_purchase: bool  # Has made purchase >100 ZNC
+
+    class Config:
+        from_attributes = True
+
+
+class ReferralStatsResponse(BaseModel):
+    """Referral statistics for a user"""
+
+    referral_code: str  # User's unique referral code
+    total_referrals: int  # Total number of users referred
+    qualifying_referrals: int  # Number who made purchase >100 ZNC
+    total_bonus_earned: float  # Total ZNC earned from referrals
+    referral_link: str  # Shareable registration link with code
+    referred_users: list[ReferredUserInfo]  # List of referred users
 
     class Config:
         from_attributes = True

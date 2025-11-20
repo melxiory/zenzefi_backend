@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,22 +11,32 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+def register(
+    user_data: UserCreate,
+    db: Session = Depends(get_db),
+    ref: Optional[str] = Query(None, description="Referral code from existing user (12 characters)")
+):
     """
-    Register a new user
+    Register a new user.
 
     Args:
-        user_data: User registration data
+        user_data: User registration data (email, username, password, full_name)
         db: Database session
+        ref: Optional referral code (query parameter)
 
     Returns:
-        Created user data
+        Created user data with generated referral_code
 
     Raises:
-        HTTPException: If email or username already exists
+        HTTPException:
+            - 400: Email/username already exists or invalid referral code
+
+    Example:
+        POST /api/v1/auth/register?ref=A7B9C2D4E6F8
+        Body: {"email": "user@example.com", "username": "user", "password": "password123"}
     """
     try:
-        user = AuthService.register_user(user_data, db)
+        user = AuthService.register_user(user_data, db, referral_code=ref)
         return user
     except ValueError as e:
         raise HTTPException(

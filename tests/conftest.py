@@ -169,6 +169,7 @@ def test_user(test_db: Session, test_user_data: dict):
     from decimal import Decimal
     from app.models import User
     from app.core.security import get_password_hash
+    from app.services.auth_service import AuthService
 
     user = User(
         email=test_user_data["email"],
@@ -178,6 +179,7 @@ def test_user(test_db: Session, test_user_data: dict):
         is_active=True,
         is_superuser=False,
         currency_balance=Decimal("0.00"),  # Default: no balance
+        referral_code=AuthService.generate_referral_code(test_db),  # Phase 5: Generate unique code
     )
 
     test_db.add(user)
@@ -196,6 +198,7 @@ def test_user_with_balance(test_db: Session, test_user_data: dict):
     from decimal import Decimal
     from app.models import User
     from app.core.security import get_password_hash
+    from app.services.auth_service import AuthService
 
     user = User(
         email=test_user_data["email"],
@@ -205,6 +208,7 @@ def test_user_with_balance(test_db: Session, test_user_data: dict):
         is_active=True,
         is_superuser=False,
         currency_balance=Decimal("1000.00"),  # Pre-funded for token purchases
+        referral_code=AuthService.generate_referral_code(test_db),  # Phase 5: Generate unique code
     )
 
     test_db.add(user)
@@ -238,6 +242,7 @@ def test_user_2(test_db: Session, test_user_data_2: dict):
     from decimal import Decimal
     from app.models import User
     from app.core.security import get_password_hash
+    from app.services.auth_service import AuthService
 
     user = User(
         email=test_user_data_2["email"],
@@ -247,6 +252,7 @@ def test_user_2(test_db: Session, test_user_data_2: dict):
         is_active=True,
         is_superuser=False,
         currency_balance=Decimal("0.00"),
+        referral_code=AuthService.generate_referral_code(test_db),  # Phase 5: Generate unique code
     )
 
     test_db.add(user)

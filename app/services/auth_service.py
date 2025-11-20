@@ -1,5 +1,7 @@
 from datetime import timedelta
 from typing import Optional
+import secrets
+import string
 
 from sqlalchemy.orm import Session
 
@@ -18,19 +20,53 @@ class AuthService:
     """Service for authentication operations"""
 
     @staticmethod
-    def register_user(user_data: UserCreate, db: Session) -> User:
+    def generate_referral_code(db: Session) -> str:
+        """
+        Generate a unique 12-character referral code.
+
+        Format: Alphanumeric (uppercase + digits), URL-safe
+        Example: "A7B9C2D4E6F8"
+
+        Args:
+            db: Database session
+
+        Returns:
+            Unique 12-character referral code
+
+        Note:
+            Retries up to 10 times if collision occurs (extremely rare)
+        """
+        alphabet = string.ascii_uppercase + string.digits
+        max_attempts = 10
+
+        for _ in range(max_attempts):
+            code = "".join(secrets.choice(alphabet) for _ in range(12))
+
+            # Check uniqueness
+            existing = db.query(User).filter(User.referral_code == code).first()
+            if not existing:
+                return code
+
+        # Fallback: use timestamp-based code (should never happen)
+        import time
+        timestamp = str(int(time.time() * 1000))[-12:]
+        return timestamp.upper()
+
+    @staticmethod
+    def register_user(user_data: UserCreate, db: Session, referral_code: Optional[str] = None) -> User:
         """
         Register a new user
 
         Args:
             user_data: User creation data
             db: Database session
+            referral_code: Optional referral code from existing user
 
         Returns:
             Created User object
 
         Raises:
-            ValueError: If email or username already exists
+            ValueError: If email/username already exists or referral code invalid
         """
         # Check if email already exists
         existing_user = db.query(User).filter(User.email == user_data.email).first()
@@ -44,6 +80,22 @@ class AuthService:
         if existing_username:
             raise ValueError("Username already taken")
 
+        # Validate referral code if provided
+        referrer_id = None
+        if referral_code:
+            referrer = db.query(User).filter(
+                User.referral_code == referral_code,
+                User.is_active == True
+            ).first()
+
+            if not referrer:
+                raise ValueError("Invalid referral code")
+
+            referrer_id = referrer.id
+
+        # Generate unique referral code for new user
+        new_referral_code = AuthService.generate_referral_code(db)
+
         # Create new user
         hashed_password = get_password_hash(user_data.password)
         db_user = User(
@@ -51,6 +103,8 @@ class AuthService:
             username=user_data.username,
             hashed_password=hashed_password,
             full_name=user_data.full_name,
+            referral_code=new_referral_code,
+            referred_by_id=referrer_id,
         )
 
         db.add(db_user)
