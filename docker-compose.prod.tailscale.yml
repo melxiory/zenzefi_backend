@@ -70,7 +70,7 @@ services:
 
   # Backend API
   backend:
-    image: ${DOCKER_IMAGE:-melxiory/zenzefi-backend:main}
+    image: zenzefi-backend:latest
     container_name: zenzefi-backend
     restart: always
     env_file:
