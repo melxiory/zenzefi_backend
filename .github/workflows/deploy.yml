@@ -44,6 +44,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:buildcache,mode=max
+          build-args: |
+            BUILDTIME=${{ github.run_id }}
+            GIT_SHA=${{ github.sha }}
 
       - name: Extract Git SHA for deployment
         id: git-sha
