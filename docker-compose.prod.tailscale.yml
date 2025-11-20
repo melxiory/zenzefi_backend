@@ -70,7 +70,7 @@ services:
 
   # Backend API
   backend:
-    image: melxiory/zenzefi-backend:main
+    image: melxiory/zenzefi-backend:sha-${GIT_SHA:-main}
     container_name: zenzefi-backend
     restart: always
     env_file:
