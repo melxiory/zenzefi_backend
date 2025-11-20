@@ -60,9 +60,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/zenzefi
-            export DOCKER_IMAGE="${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:${{ steps.git-sha.outputs.sha }}"
+            DOCKER_IMAGE="${{ secrets.DOCKER_USERNAME }}/zenzefi-backend:${{ steps.git-sha.outputs.sha }}"
             docker pull $DOCKER_IMAGE
-            docker compose -f docker-compose.prod.tailscale.yml up -d --force-recreate backend
+            DOCKER_IMAGE=$DOCKER_IMAGE docker compose -f docker-compose.prod.tailscale.yml up -d --force-recreate backend
             docker system prune -f
 
 # Required GitHub Secrets:
